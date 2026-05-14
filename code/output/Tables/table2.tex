@@ -1,35 +1,37 @@
 \documentclass[11pt]{article}
 \usepackage{booktabs}
+\usepackage{tabularx}
+\newcolumntype{Y}{>{\centering\arraybackslash}X}
 \usepackage{graphicx}
 \usepackage[margin=1in]{geometry}
 \begin{document}
 \small
 
 % Table created by stargazer v.5.2.3 by Marek Hlavac, Social Policy Institute. E-mail: marek.hlavac at gmail.com
-% Date and time: jeu., mai 14, 2026 - 13:30:18
+% Date and time: jeu., mai 14, 2026 - 19:15:40
 \begin{table}[!htbp] \centering 
   \caption{Dark Matter Exports and the Official Current Account (1980--2003)} 
   \label{tab:table2} 
-\begin{tabular}{@{\extracolsep{5pt}}lccc} 
+\begin{tabularx}{\linewidth}{lYYY} 
 \\[-1.8ex]\hline 
 \hline \\[-1.8ex] 
 \\[-1.8ex] & \multicolumn{3}{c}{Dark matter exports (\% of 2003 GDP)} \\ 
  & Full & Excl. USA & Excl. USA, GBR \\ 
 \\[-1.8ex] & (1) & (2) & (3)\\ 
 \hline \\[-1.8ex] 
- Official CA (\% of 2003 GDP) & $-$0.910$^{***}$ & $-$0.910$^{***}$ & $-$0.911$^{***}$ \\ 
-  & (0.070) & (0.070) & (0.070) \\ 
+ Official CA (\% of 2003 GDP) & $-$0.860$^{***}$ & $-$0.860$^{***}$ & $-$0.862$^{***}$ \\ 
+  & (0.080) & (0.081) & (0.081) \\ 
   & & & \\ 
- Constant & $-$27.535$^{***}$ & $-$27.723$^{***}$ & $-$28.076$^{***}$ \\ 
-  & (6.416) & (6.449) & (6.479) \\ 
+ Constant & $-$27.935$^{***}$ & $-$28.243$^{***}$ & $-$28.800$^{***}$ \\ 
+  & (7.704) & (7.763) & (7.817) \\ 
   & & & \\ 
-Observations & 170 & 169 & 168 \\ 
-R$^{2}$ & 0.503 & 0.504 & 0.505 \\ 
+Observations & 111 & 110 & 109 \\ 
+R$^{2}$ & 0.513 & 0.513 & 0.515 \\ 
 \hline \\[-1.8ex] 
 \textit{Notes:} & \multicolumn{3}{l}{$^{***}$Significant at the 1 percent level.} \\ 
  & \multicolumn{3}{l}{$^{**}$Significant at the 5 percent level.} \\ 
  & \multicolumn{3}{l}{$^{*}$Significant at the 10 percent level.} \\ 
  & \multicolumn{3}{l}{Std. errors in parentheses. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.} \\ 
-\end{tabular} 
+\end{tabularx} 
 \end{table} 
 \end{document}
