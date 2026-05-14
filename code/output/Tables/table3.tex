@@ -1,17 +1,19 @@
 \documentclass[11pt]{article}
 \usepackage{booktabs}
-\usepackage{dcolumn}
+\usepackage{tabularx}
+\newcolumntype{Y}{>{\centering\arraybackslash}X}
 \usepackage{graphicx}
 \usepackage[margin=1in]{geometry}
 \begin{document}
 \small
 
 % Table created by stargazer v.5.2.3 by Marek Hlavac, Social Policy Institute. E-mail: marek.hlavac at gmail.com
-% Date and time: mer., mai 13, 2026 - 22:22:16
+% Date and time: jeu., mai 14, 2026 - 13:52:07
 \begin{table}[!htbp] \centering 
   \caption{Sources of Dark Matter: Cross-Section Evidence (1980--2003)} 
   \label{tab:table3} 
-\begin{tabular}{@{\extracolsep{5pt}}lcccc} 
+\small 
+\begin{tabularx}{\linewidth}{lYYYY} 
 \\[-1.8ex]\hline 
 \hline \\[-1.8ex] 
 \\[-1.8ex] & \multicolumn{4}{c}{Dark matter exports (\% of 2003 GDP)} \\ 
@@ -48,7 +50,7 @@ R$^{2}$ & 0.083 & 0.096 & 0.170 & 0.088 \\
 \textit{Notes:} & \multicolumn{4}{l}{$^{***}$Significant at the 1 percent level.} \\ 
  & \multicolumn{4}{l}{$^{**}$Significant at the 5 percent level.} \\ 
  & \multicolumn{4}{l}{$^{*}$Significant at the 10 percent level.} \\ 
- & \multicolumn{4}{l}{Standard errors in parentheses. * p$<$0.10, ** p$<$0.05, *** p$<$0.01. Variables winsorised at the 1\% level. Column (vii): 21 industrial countries, no winsorisation.} \\ 
-\end{tabular} 
+ & \multicolumn{4}{l}{* p$<$0.10, ** p$<$0.05, *** p$<$0.01. Std. errors in parentheses. Winsorised at 1\%. Col. (vii): industrial countries only.} \\ 
+\end{tabularx} 
 \end{table} 
 \end{document}
