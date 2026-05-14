@@ -106,7 +106,7 @@ EWN <- EWN_raw %>%
   ) %>%
   filter(!is.na(iso3c))
 
-# ── World Bank WDI ────────────────────────────────────────────────────────────
+# ── World Bank WDI and IFS GDP ────────────────────────────────────────────────────────────
 
 read_wb <- function(filename) {
   read_csv(here("code", "data", filename), skip = 4, show_col_types = FALSE) %>%
@@ -117,7 +117,22 @@ read_wb <- function(filename) {
     filter(year >= y_start, year <= y_end, !is.na(iso3c), iso3c != "")
 }
 
-gdp_con <- read_wb("GDP_constant_1975_2005.csv")       %>% rename(gdp_con = value)
+ifs_gdp_raw <- read_csv(
+  here("code", "data", "GDP_IMF.csv"),
+  show_col_types = FALSE
+)
+
+gdp_con <- ifs_gdp_raw %>%
+  rename(iso3c = SERIES_CODE) %>%
+  mutate(iso3c = str_extract(iso3c, "^[^.]+")) %>%
+  select(iso3c, matches("^\\d{4}-Q\\d$")) %>%
+  pivot_longer(-iso3c, names_to = "quarter", values_to = "value") %>%
+  mutate(year = as.integer(str_extract(quarter, "^\\d{4}"))) %>%
+  filter(year >= y_start, year <= y_end) %>%
+  group_by(iso3c, year) %>%
+  summarise(gdp_con = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  filter(!is.na(gdp_con), !is.infinite(gdp_con))
+
 rnd     <- read_wb("RND_expenditure_1975_2005.csv")    %>% rename(rnd     = value)
 
 # ── World Bank WGI ────────────────────────────────────────────────────────────
@@ -719,6 +734,13 @@ message("\nDone.")
 message("Figures (PDF + PNG) : code/output/figures/")
 message("Tables  (PDF + TEX) : code/output/tables/")
 
+### FOR TABLES 3 AND 4 :
+#"Unlike Hausmann & Sturzenegger (2006), we find a positive coefficient on
+#output volatility, suggesting that the insurance channel identified in the
+#original paper is not robust to updated data. 
+#This may reflect substantial revisions in NFA stocks in the 2024 
+#update of the EWN database, particularly for emerging economies 
+#with high output volatility."
 
 # ==============================================================================
 #

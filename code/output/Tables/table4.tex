@@ -1,43 +1,26 @@
 \documentclass[11pt]{article}
 \usepackage{booktabs}
-\usepackage{tabularx}
-\newcolumntype{Y}{>{\centering\arraybackslash}X}
+\usepackage{dcolumn}
 \usepackage{graphicx}
-\usepackage[landscape, margin=0.6in]{geometry}
+\usepackage[landscape, margin=0.7in]{geometry}
 \begin{document}
 \small
-
-% Table created by stargazer v.5.2.3 by Marek Hlavac, Social Policy Institute. E-mail: marek.hlavac at gmail.com
-% Date and time: jeu., mai 14, 2026 - 19:15:45
-\begin{table}[!htbp] \centering 
-  \caption{Sources of Dark Matter: Panel Evidence (1980--2004)} 
-  \label{tab:table4} 
-\small 
-\begin{tabularx}{\linewidth}{lYYYYY} 
-\\[-1.8ex]\hline 
-\hline \\[-1.8ex] 
-\\[-1.8ex] & \multicolumn{5}{c}{Dark matter CA (\% GDP)} \\ 
- & Pool -- Full & Pool -- Restr & Pool -- Ind & FE -- Full & FE -- Restr \\ 
-\\[-1.8ex] & (1) & (2) & (3) & (4) & (5)\\ 
-\hline \\[-1.8ex] 
- FDI liabilities (\% GDP) & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\ 
-  & (0.000) & (0.000) & (0.000) & (0.000) & (0.000) \\ 
-  & & & & & \\ 
- FDI assets (\% GDP) & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\ 
-  & (0.000) & (0.000) & (0.000) & (0.000) & (0.000) \\ 
-  & & & & & \\ 
- Output volatility & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\ 
-  & (0.000) & (0.000) & (0.000) & (0.000) & (0.000) \\ 
-  & & & & & \\ 
- Constant & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 \\ 
-  & (0.000) & (0.000) & (0.000) & (0.000) & (0.000) \\ 
-  & & & & & \\ 
-Observations & 2,702 & 1,987 & 374 & 2,702 & 1,987 \\ 
-\hline \\[-1.8ex] 
-\textit{Notes:} & \multicolumn{5}{l}{$^{***}$Significant at the 1 percent level.} \\ 
- & \multicolumn{5}{l}{$^{**}$Significant at the 5 percent level.} \\ 
- & \multicolumn{5}{l}{$^{*}$Significant at the 10 percent level.} \\ 
- & \multicolumn{5}{l}{* p$<$0.10, ** p$<$0.05, *** p$<$0.01. Std. errors in parentheses. Restr. = excl. OPEC and HIPC. FE models include country fixed effects.} \\ 
-\end{tabularx} 
-\end{table} 
+\begin{table}[htbp]
+\centering
+\caption{Sources of Dark Matter: Panel Evidence (1980--2004)}
+\begin{tabular}{lllllll}
+& Pool -- Full & Pool -- Restr & Pool -- Ind & FE -- Full & FE -- Restr & FE -- Ind \\
+(Intercept) & -1.8779 & -1.7744 & -0.9695 &  &  &  \\
+& (1.4452) & (1.5180) & (1.2649) &  &  &  \\
+FDI liabilities (\% GDP) & -0.0895 & -0.0875 & -0.1650* & -0.0829 & -0.0945 & 0.1054 \\
+& (0.0615) & (0.0688) & (0.0998) & (0.1230) & (0.1654) & (0.1819) \\
+FDI assets (\% GDP) & 0.0927 & 0.0860 & 0.1882** & 0.0225 & 0.0319 & 0.0371 \\
+& (0.0711) & (0.0793) & (0.0770) & (0.1155) & (0.1433) & (0.1242) \\
+Output volatility & 7.1750 & 8.1118 & 2.8788 &  &  &  \\
+& (7.6413) & (7.9805) & (4.4625) &  &  &  \\
+Num.Obs. & 543 & 493 & 243 & 543 & 493 & 243 \\
+R2 & 0.008 & 0.008 & 0.046 & 0.002 & 0.001 & 0.028 \\
+RMSE & 23.84 & 24.32 & 11.85 & 23.63 & 24.09 & 11.67 \\
+\end{tabular}
+\end{table}
 \end{document}

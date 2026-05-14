@@ -1,37 +1,36 @@
 \documentclass[11pt]{article}
 \usepackage{booktabs}
-\usepackage{tabularx}
-\newcolumntype{Y}{>{\centering\arraybackslash}X}
+\usepackage{dcolumn}
 \usepackage{graphicx}
 \usepackage[margin=1in]{geometry}
 \begin{document}
 \small
 
 % Table created by stargazer v.5.2.3 by Marek Hlavac, Social Policy Institute. E-mail: marek.hlavac at gmail.com
-% Date and time: jeu., mai 14, 2026 - 19:15:39
+% Date and time: Thu, May 14, 2026 - 23:23:19
 \begin{table}[!htbp] \centering 
   \caption{Cumulative Official CA and Dark Matter CA (1980--2003)} 
   \label{tab:table1} 
-\begin{tabularx}{\linewidth}{lYYYY} 
+\begin{tabular}{@{\extracolsep{5pt}}lcccc} 
 \\[-1.8ex]\hline 
 \hline \\[-1.8ex] 
 \\[-1.8ex] & \multicolumn{4}{c}{Cumulative official CA (\$bn)} \\ 
  & Full & Excl. USA & Excl. USA, GBR & Excl. USA, GBR, JPN \\ 
 \\[-1.8ex] & (1) & (2) & (3) & (4)\\ 
 \hline \\[-1.8ex] 
- Dark matter CA (\$bn) & 0.186 & 0.200$^{**}$ & 0.548$^{***}$ & 0.548$^{***}$ \\ 
-  & (0.394) & (0.086) & (0.078) & (0.078) \\ 
+ Dark matter CA (\$bn) & 0.264 & 0.286$^{***}$ & 0.521$^{***}$ & 0.250$^{***}$ \\ 
+  & (0.351) & (0.108) & (0.107) & (0.087) \\ 
   & & & & \\ 
- Constant & $-$37.019 & $-$3.081 & 5.951 & 5.951 \\ 
-  & (34.990) & (7.639) & (6.011) & (6.011) \\ 
+ Constant & $-$30.482 & 7.411 & 16.984 & 4.068 \\ 
+  & (39.988) & (12.390) & (11.215) & (8.639) \\ 
   & & & & \\ 
-Observations & 112 & 111 & 110 & 110 \\ 
-R$^{2}$ & 0.002 & 0.048 & 0.315 & 0.315 \\ 
+Observations & 101 & 100 & 99 & 98 \\ 
+R$^{2}$ & 0.006 & 0.067 & 0.197 & 0.079 \\ 
 \hline \\[-1.8ex] 
 \textit{Notes:} & \multicolumn{4}{l}{$^{***}$Significant at the 1 percent level.} \\ 
  & \multicolumn{4}{l}{$^{**}$Significant at the 5 percent level.} \\ 
  & \multicolumn{4}{l}{$^{*}$Significant at the 10 percent level.} \\ 
- & \multicolumn{4}{l}{Std. errors in parentheses. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.} \\ 
-\end{tabularx} 
+ & \multicolumn{4}{l}{Standard errors in parentheses. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.} \\ 
+\end{tabular} 
 \end{table} 
 \end{document}
