@@ -1,7 +1,7 @@
 # ==============================================================================
 #
 # Paper Replication - Hausmann & Sturzenegger (2006)
-# "Global Imbalances or Bad Accounting ? The Missing Dark Matter in the Wealth of Nations"
+# "Global Imbalances or Bad Accounting? The Missing Dark Matter in the Wealth of Nations"
 #
 # Eliot Gharib - Youssef Benzakour - Benjamin Frémy
 #
@@ -40,7 +40,7 @@ y_end    <- 2005
 #
 # Part 1 — Data
 #
-# We draw on five sources :
+# We draw on four sources :
 #
 #   - IMF BOP : current account balance and net investment income
 #     https://data.imf.org/en/datasets/IMF.STA:BOP
@@ -64,6 +64,7 @@ bop_raw <- read_csv(
   show_col_types = FALSE
 )
 
+# Annual columns only (exclude quarterly "YYYY-QN")
 year_cols <- names(bop_raw)[grepl("^\\d{4}$", names(bop_raw))]
 
 bop <- bop_raw %>%
@@ -78,7 +79,8 @@ bop <- bop_raw %>%
   mutate(year = as.integer(year), value = suppressWarnings(as.numeric(value))) %>%
   filter(year >= y_start, year <= y_end) %>%
   pivot_wider(names_from = indicator, values_from = value) %>%
-  rename(ca_usd = `NETCD_T.CAB.USD.A`, nii_usd = `NETCD_T.IN1.USD.A`)
+  rename(ca_usd  = `NETCD_T.CAB.USD.A`,
+         nii_usd = `NETCD_T.IN1.USD.A`)
 
 # ── EWN ───────────────────────────────────────────────────────────────────────
 
@@ -94,9 +96,10 @@ EWN <- EWN_raw %>%
     fdi_assets = `FDI assets (stock)`,
     fdi_liab   = `FDI liabilities (stock)`,
     nfa        = `Net IIP excl gold`,
-    gdp_usd    = `GDP (US$)`
+    gdp_usd    = `GDP (US$)`,
+    ca_ewn     = `Current account balance`   # backup CA for BOP gaps
   ) %>%
-  select(ifs_code, year, fdi_assets, fdi_liab, nfa, gdp_usd) %>%
+  select(ifs_code, year, fdi_assets, fdi_liab, nfa, gdp_usd, ca_ewn) %>%
   filter(year >= y_start, year <= y_end) %>%
   mutate(
     iso3c          = countrycode(ifs_code, "imf", "iso3c", warn = FALSE),
@@ -117,8 +120,8 @@ read_wb <- function(filename) {
     filter(year >= y_start, year <= y_end, !is.na(iso3c), iso3c != "")
 }
 
-gdp_con <- read_wb("GDP_constant_1975_2005.csv")       %>% rename(gdp_con = value)
-rnd     <- read_wb("RND_expenditure_1975_2005.csv")    %>% rename(rnd     = value)
+gdp_con <- read_wb("GDP_constant_1975_2005.csv")    %>% rename(gdp_con = value)
+rnd     <- read_wb("RND_expenditure_1975_2005.csv") %>% rename(rnd     = value)
 
 # ── World Bank WGI ────────────────────────────────────────────────────────────
 
@@ -156,26 +159,75 @@ eu <- c("AUT","BEL","DNK","FIN","FRA","DEU","GRC","IRL","ITA","LUX","NLD",
         "PRT","ESP","SWE","GBR","CZE","EST","HUN","LVA","LTU","MLT","POL",
         "SVK","SVN","CYP")
 
+# ── Country lists from Appendix A.2 of Hausmann & Sturzenegger (2006) ─────────
+#
+# FIX: Romania est "ROU" dans le BOP (pas "ROM"). Le code original utilisait
+# "ROM" ce qui empêchait la jointure avec les données BOP → Romania disparaissait.
+#
+# 7 pays irrécupérables avec les données actuelles (NII = 0 sur 1980-2003
+# dans le portail BOP ; données présentes dans IFS 2005 utilisé par H&S) :
+# AUT, BFA, CIV, IRL, MOZ, RWA, YEM
+# → max 102 obs (vs 109 dans l'article) avec les sources disponibles.
+# AUT et IRL sont aussi dans countries_79 → max ~77 obs pour Table 3 col (i).
+
+countries_109 <- c("ALB","AGO","ARG","AUS","AUT","BHR","BGD","BEN","BOL","BWA",
+                   "BRA","BGR","BFA","KHM","CMR","CAN","CHL","CHN","COL","COG",
+                   "CRI","CYP","CIV","DNK","DOM","ECU","EGY","SLV","EST","ETH",
+                   "FJI","FIN","FRA","GAB","DEU","GHA","GRC","GTM","HTI","HND",
+                   "HUN","ISL","IND","IDN","IRN","IRL","ISR","ITA","JAM","JPN",
+                   "JOR","KEN","KOR","KWT","LAO","LBY","MDG","MWI","MYS","MLI",
+                   "MLT","MUS","MEX","MAR","MOZ","MMR","NAM","NPL","NLD","NZL",
+                   "NIC","NER","NGA","NOR","OMN","PAK","PAN","PNG","PRY","PER",
+                   "PHL","POL","PRT","ROU","RWA","SAU","SEN","SGP","ZAF","ESP",
+                   "LKA","SDN","SWZ","SWE","CHE","SYR","TZA","THA","TGO","TTO",
+                   "TUN","TUR","UGA","GBR","USA","URY","VEN","YEM","ZWE")
+#                        ^^^ FIX: ROM → ROU (code ISO3C correct pour la Roumanie)
+
+countries_79 <- c("ARG","AUS","AUT","BHR","BGD","BOL","BRA","CAN","CHL","COL",
+                  "COG","CRI","CYP","CIV","DOM","ECU","EGY","SLV","ETH","FIN",
+                  "FRA","GAB","DEU","GHA","GTM","HND","ISL","IND","IRL","ISR",
+                  "ITA","JAM","JPN","JOR","KEN","KOR","KWT","LBY","MDG","MYS",
+                  "MLI","MLT","MUS","MEX","MAR","MMR","NPL","NLD","NZL","NIC",
+                  "NER","NOR","OMN","PAK","PAN","PRY","PER","PHL","POL","PRT",
+                  "ROU","SAU","SEN","SGP","ZAF","ESP","LKA","SDN","SWE","CHE",
+                  "SYR","THA","TGO","TUN","TUR","GBR","USA","URY","VEN")
+#                  ^^^ FIX: ROM → ROU
+
 
 # ==============================================================================
 #
 # Part 2 — Panel construction
 #
+# Scaffold countries_109 × années : seuls les pays de l'échantillon H&S
+# sont dans le panel. Pour les pays sans NII dans le BOP, ca_usd peut
+# être complété par ca_ewn (colonne CA de l'EWN) si disponible.
+#
 # ==============================================================================
 
-panel <- bop %>%
+scaffold <- expand.grid(
+  iso3c = countries_109,
+  year  = y_start:y_end,
+  stringsAsFactors = FALSE
+) %>%
+  as_tibble()
+
+panel <- scaffold %>%
+  left_join(bop, by = c("iso3c", "year")) %>%
   left_join(EWN %>% select(iso3c, year, fdi_assets_gdp, fdi_liab_gdp,
-                           nfa_gdp, gdp_usd),
+                           nfa_gdp, gdp_usd, ca_ewn),
             by = c("iso3c", "year")) %>%
   left_join(gdp_con, by = c("iso3c", "year")) %>%
   left_join(rnd,     by = c("iso3c", "year")) %>%
   left_join(wgi,     by = "iso3c") %>%
-  filter(year >= y_start, year <= y_end) %>%
+  # Pour les pays sans CA dans le BOP, utiliser la CA de l'EWN comme backup
   mutate(
+    ca_usd  = if_else(is.na(ca_usd) & !is.na(ca_ewn), ca_ewn, ca_usd),
     country = countrycode(iso3c, "iso3c", "country.name"),
     opec_d  = as.integer(iso3c %in% opec),
     hipc_d  = as.integer(iso3c %in% hipc)
   ) %>%
+  select(-ca_ewn) %>%
+  filter(year >= y_start, year <= y_end) %>%
   arrange(iso3c, year)
 
 
@@ -282,13 +334,21 @@ cs <- panel %>%
     .groups = "drop"
   )
 
+# Diagnostic
+missing_dm <- cs$iso3c[is.na(cs$cum_dm_bn)]
+message(sprintf(
+  "Obs disponibles pour Tables 1 & 2 : %d / 109\nPays sans NII (NFA_DM non calculable) : %s\n",
+  sum(!is.na(cs$cum_dm_bn) & !is.na(cs$cum_oca_bn) & cs$iso3c %in% countries_109),
+  paste(missing_dm[missing_dm %in% countries_109], collapse = ", ")
+))
+
 
 # ==============================================================================
 #
 # Part 7 — Figures
 #
-# Publication-quality style: white background, minimal gridlines, muted palette.
-# ggsave() overwrites existing files — re-running this section updates all outputs.
+# Tous les scatters sont filtrés sur countries_109 (échantillon H&S exact).
+# Figure 6c : panel séparé depuis le BOP brut + interpolation linéaire.
 #
 # ==============================================================================
 
@@ -348,7 +408,7 @@ fig1 <- us %>%
   scale_x_continuous(breaks = seq(1982, 2005, 4)) +
   scale_y_continuous(labels = label_comma(suffix = " B")) +
   labs(title    = "Figure 1.  US Cumulative Current Account and Net Investment Income",
-       subtitle = "In billions of US dollars",
+       subtitle = "Billions of US dollars",
        x = NULL, y = "Billions USD")
 
 save_fig(fig1, "fig1_us_ca_nii")
@@ -356,7 +416,8 @@ save_fig(fig1, "fig1_us_ca_nii")
 # ── Figure 3a ──────────────────────────────────────────────────────────────────
 
 fig3a <- cs %>%
-  filter(!is.na(cum_dm_bn), !is.na(cum_oca_bn)) %>%
+  filter(iso3c %in% countries_109,
+         !is.na(cum_dm_bn), !is.na(cum_oca_bn)) %>%
   ggplot(aes(x = cum_dm_bn, y = cum_oca_bn, label = iso3c)) +
   geom_abline(slope = 1, intercept = 0,
               colour = col_grey, linetype = "dashed", linewidth = 0.5) +
@@ -366,8 +427,8 @@ fig3a <- cs %>%
                   box.padding = 0.25, max.overlaps = 30, seed = 42) +
   scale_x_continuous(labels = label_comma()) +
   scale_y_continuous(labels = label_comma()) +
-  labs(title    = "Figure 3a.  Official vs Dark Matter Current Account (1980\u20132003)",
-       subtitle = "Billions USD. Countries right of the 45\u00b0 line export dark matter.",
+  labs(title    = "Figure 3a.  Cumulative Official CA vs. Change in Dark Matter NFA (1980\u20132003)",
+       subtitle = "Billions USD. Countries to the right of the 45\u00b0 line are net dark matter exporters.",
        x        = "Change in NFA \u2014 dark matter measure ($bn)",
        y        = "Cumulative official current account ($bn)")
 
@@ -376,8 +437,10 @@ save_fig(fig3a, "fig3a_scatter", h = 6.5)
 # ── Figure 3b ──────────────────────────────────────────────────────────────────
 
 fig3b <- cs %>%
-  filter(!is.na(cum_dm_bn), !is.na(cum_oca_bn),
-         iso3c != "USA", abs(cum_oca_bn) < 700, abs(cum_dm_bn) < 700) %>%
+  filter(iso3c %in% countries_109,
+         !is.na(cum_dm_bn), !is.na(cum_oca_bn),
+         iso3c != "USA",
+         abs(cum_oca_bn) < 700, abs(cum_dm_bn) < 700) %>%
   ggplot(aes(x = cum_dm_bn, y = cum_oca_bn, label = iso3c)) +
   geom_abline(slope = 1, intercept = 0,
               colour = col_grey, linetype = "dashed", linewidth = 0.5) +
@@ -387,8 +450,8 @@ fig3b <- cs %>%
                   box.padding = 0.25, max.overlaps = 35, seed = 42) +
   scale_x_continuous(labels = label_comma()) +
   scale_y_continuous(labels = label_comma()) +
-  labs(title    = "Figure 3b.  Official vs Dark Matter CA (1980\u20132003, excl. USA)",
-       subtitle = "Most countries cluster near the 45\u00b0 line. Billions USD.",
+  labs(title    = "Figure 3b.  Cumulative Official CA vs. Change in Dark Matter NFA (excl. USA)",
+       subtitle = "Billions USD. Most countries cluster around the 45\u00b0 line.",
        x        = "Change in NFA \u2014 dark matter measure ($bn)",
        y        = "Cumulative official current account ($bn)")
 
@@ -397,7 +460,8 @@ save_fig(fig3b, "fig3b_scatter_zoom", h = 6.5)
 # ── Figure 5b ──────────────────────────────────────────────────────────────────
 
 fig5b <- cs %>%
-  filter(!is.na(dm_exp_gdp), !is.na(cum_oca_gdp),
+  filter(iso3c %in% countries_109,
+         !is.na(dm_exp_gdp), !is.na(cum_oca_gdp),
          abs(cum_oca_gdp) < quantile(abs(cum_oca_gdp), 0.97, na.rm = TRUE),
          abs(dm_exp_gdp)  < quantile(abs(dm_exp_gdp),  0.97, na.rm = TRUE)) %>%
   ggplot(aes(x = cum_oca_gdp, y = dm_exp_gdp, label = iso3c)) +
@@ -409,29 +473,52 @@ fig5b <- cs %>%
   geom_text_repel(size = 2.3, colour = "grey25",
                   segment.colour = "grey70", segment.size = 0.3,
                   box.padding = 0.25, max.overlaps = 30, seed = 42) +
-  labs(title    = "Figure 5b.  Dark Matter Exports vs Official Current Account",
-       subtitle = "Cumulative 1980\u20132003, % of 2003 GDP. OLS fit with 95% confidence band.",
-       x        = "Cumulative official CA, 1980\u20132003 (% of 2003 GDP)",
+  labs(title    = "Figure 5b.  Dark Matter Exports vs. Cumulative Official Current Account (1980\u20132003)",
+       subtitle = "% of 2003 GDP. OLS fit with 95% confidence band.",
+       x        = "Cumulative official current account, 1980\u20132003 (% of 2003 GDP)",
        y        = "Cumulative dark matter exports (% of 2003 GDP)")
 
 save_fig(fig5b, "fig5b_dm_vs_ca", h = 6.5)
 
 # ── Figure 6c ──────────────────────────────────────────────────────────────────
+# Panel séparé depuis le BOP brut complet + interpolation intra-série.
+# Protection : approx() requiert >= 2 points non-NA.
 
-global <- panel %>%
-  filter(year >= 1980, year <= 2004, !is.na(nfa_dm), !is.na(gdp_usd)) %>%
+panel_fig6 <- bop %>%
+  left_join(EWN %>% select(iso3c, year, gdp_usd),
+            by = c("iso3c", "year")) %>%
+  filter(year >= 1980, year <= 2004) %>%
+  group_by(iso3c) %>%
+  arrange(year) %>%
+  mutate(
+    nii_fill = {
+      ok <- !is.na(nii_usd)
+      if (sum(ok) >= 2)
+        approx(year[ok], nii_usd[ok], xout = year, rule = 1)$y
+      else
+        nii_usd
+    },
+    nfa_dm = nii_fill / r
+  ) %>%
+  ungroup()
+
+global <- panel_fig6 %>%
+  filter(!is.na(nfa_dm), !is.na(gdp_usd)) %>%
   mutate(region = case_when(
     iso3c == "USA" ~ "United States",
     iso3c == "JPN" ~ "Japan",
     iso3c %in% eu  ~ "European Union",
-    TRUE           ~ "Rest of World")) %>%
+    TRUE           ~ "Rest of World"
+  )) %>%
   group_by(year, region) %>%
   summarise(nfa_dm_sum = sum(nfa_dm, na.rm = TRUE), .groups = "drop") %>%
   left_join(
-    panel %>% filter(!is.na(gdp_usd)) %>%
+    panel_fig6 %>%
+      filter(!is.na(gdp_usd)) %>%
       group_by(year) %>%
       summarise(world_gdp = sum(gdp_usd, na.rm = TRUE), .groups = "drop"),
-    by = "year") %>%
+    by = "year"
+  ) %>%
   mutate(nfa_pct = nfa_dm_sum / world_gdp * 100)
 
 fig6c <- ggplot(global, aes(x = year, y = nfa_pct,
@@ -450,9 +537,10 @@ fig6c <- ggplot(global, aes(x = year, y = nfa_pct,
     "Rest of World"  = "dotted")) +
   scale_x_continuous(breaks = seq(1980, 2004, 4)) +
   scale_y_continuous(labels = label_number(suffix = "%")) +
-  guides(colour = guide_legend(nrow = 2), linetype = guide_legend(nrow = 2)) +
-  labs(title    = "Figure 6c.  Net Foreign Asset Positions Including Dark Matter",
-       subtitle = "As % of world GDP. With dark matter, the US appears as a stable net creditor.",
+  guides(colour   = guide_legend(nrow = 2),
+         linetype = guide_legend(nrow = 2)) +
+  labs(title    = "Figure 6c.  Net Foreign Asset Positions Including Dark Matter (1980\u20132004)",
+       subtitle = "% of world GDP. With dark matter, the US appears as a stable net creditor.",
        x = NULL, y = "% of world GDP")
 
 save_fig(fig6c, "fig6c_global_nfa")
@@ -483,36 +571,55 @@ save_fig(fig8, "fig8_us_dm_stock")
 
 
 # ==============================================================================
-# Part 8 — Regression tables (PDF, economics paper format)
 #
-# stargazer generates LaTeX in AER style. compile_table() wraps each table in
-# a minimal LaTeX document and compiles it with tinytex::pdflatex().
-# All output files (.tex, .pdf, .log) land in code/output/tables/.
+# Part 8 — Regression tables
 #
-# Key fixes vs previous version:
-#   - No "&" in column labels (causes LaTeX alignment errors)
-#   - No gsub manipulation of the LaTeX (too fragile)
-#   - setwd() to tables dir before compiling (keeps log/aux files there)
-#   - landscape = TRUE for Table 4 (6 columns)
+# compile_table() :
+#   table_number : injecte \setcounter{table}{N-1} → bon numéro dans le PDF
+#   landscape    : orientation paysage
+#   fit_width    : enveloppe le tabular dans adjustbox{max width=\linewidth}
+#                  → réduction automatique garantie, sans distorsion
+#                  → résout le débordement de Table 3
+#
 # ==============================================================================
 
-compile_table <- function(tex_content, filename, landscape = FALSE) {
+compile_table <- function(tex_content, filename, landscape = FALSE,
+                          table_number = 1, fit_width = FALSE) {
   
-  # geometry: wider margins in landscape for 6-column tables
   geom <- if (landscape) {
     "\\usepackage[landscape, margin=0.7in]{geometry}\n"
   } else {
     "\\usepackage[margin=1in]{geometry}\n"
   }
   
+  counter_cmd <- paste0("\\setcounter{table}{", table_number - 1L, "}\n")
+  
+  # Wrap tabular dans adjustbox pour forcer le respect de \linewidth.
+  # fixed = TRUE traite la chaîne comme littérale (pas de regex) :
+  # sûr même si le LaTeX contient des caractères spéciaux.
+  if (fit_width) {
+    tex_content <- sub(
+      "\\begin{tabular}",
+      "\\begin{adjustbox}{max width=\\linewidth}\n\\begin{tabular}",
+      tex_content, fixed = TRUE
+    )
+    tex_content <- sub(
+      "\\end{tabular}",
+      "\\end{tabular}\n\\end{adjustbox}",
+      tex_content, fixed = TRUE
+    )
+  }
+  
   full_doc <- paste0(
     "\\documentclass[11pt]{article}\n",
     "\\usepackage{booktabs}\n",
     "\\usepackage{dcolumn}\n",
-    "\\usepackage{graphicx}\n",   # for \resizebox
+    "\\usepackage{graphicx}\n",
+    "\\usepackage{adjustbox}\n",
     geom,
     "\\begin{document}\n",
-    "\\small\n",                   # slightly smaller font keeps tables on one page
+    "\\small\n",
+    counter_cmd,
     tex_content, "\n",
     "\\end{document}"
   )
@@ -520,7 +627,6 @@ compile_table <- function(tex_content, filename, landscape = FALSE) {
   tables_dir <- here("code", "output", "tables")
   writeLines(full_doc, file.path(tables_dir, paste0(filename, ".tex")))
   
-  # change to tables dir so .log / .aux / .pdf all land there
   old_wd <- setwd(tables_dir)
   on.exit(setwd(old_wd), add = TRUE)
   
@@ -533,34 +639,22 @@ compile_table <- function(tex_content, filename, landscape = FALSE) {
 
 # ── Table 1 ────────────────────────────────────────────────────────────────────
 
-countries_109 <- c("ALB","AGO","ARG","AUS","AUT","BHR","BGD","BEN","BOL","BWA",
-                   "BRA","BGR","BFA","KHM","CMR","CAN","CHL","CHN","COL","COG",
-                   "CRI","CYP","CIV","DNK","DOM","ECU","EGY","SLV","EST","ETH",
-                   "FJI","FIN","FRA","GAB","DEU","GHA","GRC","GTM","HTI","HND",
-                   "HUN","ISL","IND","IDN","IRN","IRL","ISR","ITA","JAM","JPN",
-                   "JOR","KEN","KOR","KWT","LAO","LBY","MDG","MWI","MYS","MLI",
-                   "MLT","MUS","MEX","MAR","MOZ","MMR","NAM","NPL","NLD","NZL",
-                   "NIC","NER","NGA","NOR","OMN","PAK","PAN","PNG","PRY","PER",
-                   "PHL","POL","PRT","ROM","RWA","SAU","SEN","SGP","ZAF","ESP",
-                   "LKA","SDN","SWZ","SWE","CHE","SYR","TZA","THA","TGO","TTO",
-                   "TUN","TUR","UGA","GBR","USA","URY","VEN","YEM","ZWE")
-
-d1 <- cs %>% 
+d1 <- cs %>%
   filter(iso3c %in% countries_109, !is.na(cum_dm_bn), !is.na(cum_oca_bn))
 
 t1 <- list(
-  "Full"               = lm(cum_oca_bn ~ cum_dm_bn, d1),
-  "Excl. USA"          = lm(cum_oca_bn ~ cum_dm_bn, filter(d1, iso3c != "USA")),
-  "Excl. USA, GBR"     = lm(cum_oca_bn ~ cum_dm_bn,
-                            filter(d1, !iso3c %in% c("USA","GBR"))),
-  "Excl. USA, GBR, JPN"= lm(cum_oca_bn ~ cum_dm_bn,
-                            filter(d1, !iso3c %in% c("USA","GBR","JPN")))
+  "Full"                = lm(cum_oca_bn ~ cum_dm_bn, d1),
+  "Excl. USA"           = lm(cum_oca_bn ~ cum_dm_bn, filter(d1, iso3c != "USA")),
+  "Excl. USA, GBR"      = lm(cum_oca_bn ~ cum_dm_bn,
+                             filter(d1, !iso3c %in% c("USA","GBR"))),
+  "Excl. USA, GBR, JPN" = lm(cum_oca_bn ~ cum_dm_bn,
+                             filter(d1, !iso3c %in% c("USA","GBR","JPN")))
 )
 
 tex1 <- capture.output(
   stargazer(t1[[1]], t1[[2]], t1[[3]], t1[[4]],
             column.labels    = names(t1),
-            title            = "Cumulative Official CA and Dark Matter CA (1980--2003)",
+            title            = "Cumulative Current Account and Change in NFA (1980--2003)",
             label            = "tab:table1",
             dep.var.labels   = "Cumulative official CA (\\$bn)",
             covariate.labels = c("Dark matter CA (\\$bn)", "Constant"),
@@ -570,11 +664,11 @@ tex1 <- capture.output(
             style            = "aer",
             type             = "latex")
 )
-compile_table(paste(tex1, collapse = "\n"), "table1")
+compile_table(paste(tex1, collapse = "\n"), "table1", table_number = 1)
 
 # ── Table 2 ────────────────────────────────────────────────────────────────────
 
-d2 <- cs %>% 
+d2 <- cs %>%
   filter(iso3c %in% countries_109, !is.na(dm_exp_gdp), !is.na(cum_oca_gdp))
 
 t2 <- list(
@@ -597,29 +691,16 @@ tex2 <- capture.output(
             style            = "aer",
             type             = "latex")
 )
-compile_table(paste(tex2, collapse = "\n"), "table2")
-
-#Following Hausmann & Sturzenegger (2006), 
-#we restrict our sample to the 109 countries listed in their Appendix A.2. 
-#Due to differences in country coverage between the original IFS data
-#and our EWN 2024 source, our effective sample contains 101 countries 
-#for Tables 1 and 2.
+compile_table(paste(tex2, collapse = "\n"), "table2", table_number = 2)
 
 # ── Table 3 ────────────────────────────────────────────────────────────────────
+# landscape = TRUE + fit_width = TRUE : adjustbox garantit que le tabular
+# tient dans \linewidth quelle que soit sa largeur native.
 
 winsor <- function(x, p = 0.01) {
   q <- quantile(x, c(p, 1-p), na.rm = TRUE)
   pmax(pmin(x, q[2]), q[1])
 }
-
-countries_79 <- c("ARG","AUS","AUT","BHR","BGD","BOL","BRA","CAN","CHL","COL",
-                  "COG","CRI","CYP","CIV","DOM","ECU","EGY","SLV","ETH","FIN",
-                  "FRA","GAB","DEU","GHA","GTM","HND","ISL","IND","IRL","ISR",
-                  "ITA","JAM","JPN","JOR","KEN","KOR","KWT","LBY","MDG","MYS",
-                  "MLI","MLT","MUS","MEX","MAR","MMR","NPL","NLD","NZL","NIC",
-                  "NER","NOR","OMN","PAK","PAN","PRY","PER","PHL","POL","PRT",
-                  "ROM","SAU","SEN","SGP","ZAF","ESP","LKA","SDN","SWE","CHE",
-                  "SYR","THA","TGO","TUN","TUR","GBR","USA","URY","VEN")
 
 d3 <- cs %>%
   filter(iso3c %in% countries_79, !is.na(dm_exp_gdp)) %>%
@@ -644,7 +725,7 @@ t3 <- list(
 tex3 <- capture.output(
   stargazer(t3[[1]], t3[[2]], t3[[3]], t3[[4]],
             column.labels    = names(t3),
-            title            = "Sources of Dark Matter: Cross-Section Evidence (1980--2003)",
+            title            = "What Determines Whether a Country Exports Dark Matter? Cross-Section (1980--2003)",
             label            = "tab:table3",
             dep.var.labels   = "Dark matter exports (\\% of 2003 GDP)",
             covariate.labels = c("FDI assets (\\% GDP)", "FDI liabilities (\\% GDP)",
@@ -655,18 +736,13 @@ tex3 <- capture.output(
             notes            = paste0("Standard errors in parentheses. ",
                                       "* p$<$0.10, ** p$<$0.05, *** p$<$0.01. ",
                                       "Variables winsorised at the 1\\% level. ",
-                                      "Column (vii): 21 industrial countries, no winsorisation."),
+                                      "Col. (vii): 21 industrial countries, no winsorisation."),
             notes.align      = "l",
             style            = "aer",
             type             = "latex")
 )
-compile_table(paste(tex3, collapse = "\n"), "table3")
-
-#We compute output volatility using World Bank WDI real GDP series, 
-#whereas Hausmann & Sturzenegger (2006) relied on IFS data. 
-#Differences in country coverage and GDP measurement methodologies 
-#across these sources may explain the divergence in the estimated coefficient 
-#on output volatility.
+compile_table(paste(tex3, collapse = "\n"), "table3",
+              landscape = TRUE, table_number = 3, fit_width = TRUE)
 
 # ── Table 4 ────────────────────────────────────────────────────────────────────
 
@@ -702,18 +778,20 @@ tex4_ms <- modelsummary(
     "fdi_assets_gdp" = "FDI assets (% GDP)",
     "output_vol"     = "Output volatility"
   ),
-  output  = "latex_tabular"
+  output = "latex_tabular"
 )
 
 tex4_wrapped <- paste0(
   "\\begin{table}[htbp]\n",
   "\\centering\n",
-  "\\caption{Sources of Dark Matter: Panel Evidence (1980--2004)}\n",
+  "\\caption{What Determines Whether a Country Exports Dark Matter? Panel (1980--2004)}\n",
+  "\\label{tab:table4}\n",
   tex4_ms, "\n",
   "\\end{table}"
 )
 
-compile_table(tex4_wrapped, "table4", landscape = TRUE)
+compile_table(tex4_wrapped, "table4",
+              landscape = TRUE, table_number = 4, fit_width = TRUE)
 
 message("\nDone.")
 message("Figures (PDF + PNG) : code/output/figures/")
@@ -724,22 +802,23 @@ message("Tables  (PDF + TEX) : code/output/tables/")
 #
 # Summary — Replication of Hausmann & Sturzenegger (2006)
 #
-# This script replicates the main empirical results of the paper using data
-# from the IMF BOP database, the EWN dataset (Lane & Milesi-Ferretti, Brookings
-# 2024 update), and the World Bank WDI and WGI. The sample covers 1975-2005,
-# with the cross-section restricted to 1980-2003 as in the original paper.
+# DATA DISCREPANCY NOTE
 #
-# We construct the dark matter measure by capitalising net investment income
-# at a 5% discount rate (equations 1 and 2 of the paper), compute the US dark
-# matter stock against the BEA-reported 1982 NFA anchor, and replicate the
-# five main figures (1, 3a, 3b, 5b, 6c, 8) and four regression tables.
+# Bug corrigé : "ROM" → "ROU" (code ISO3C de la Roumanie) dans countries_109
+# et countries_79. Le code original ne faisait pas la jointure avec le BOP
+# pour la Roumanie, la perdant silencieusement. +1 obs pour Tables 1 & 2.
 #
-# Comparison with the original results will be added here once all regressions
-# have been reviewed. 
+# Écart résiduel irréductible : 7 pays (AUT, BFA, CIV, IRL, MOZ, RWA, YEM)
+# ont NII = 0 sur toute la période dans le portail BOP actuel. L'EWN possède
+# leurs données de stock NIP mais pas les flux NII → NFA_DM non calculable.
+# Ces pays figuraient dans l'IFS CD-ROM 2005 utilisé par H&S. Max : 102 obs
+# (vs 109 dans l'article) sans source NII alternative.
+# AUT et IRL étant aussi dans countries_79, max ~77 obs pour Table 3 col (i).
 #
-# [TO BE COMPLETED]
+# [TO BE COMPLETED: comparison with original results]
 #
 # ==============================================================================
+
 
 # ==============================================================================
 # ==============================================================================
@@ -748,7 +827,3 @@ message("Tables  (PDF + TEX) : code/output/tables/")
 #
 # ==============================================================================
 # ==============================================================================
-
-
-
-
