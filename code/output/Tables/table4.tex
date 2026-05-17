@@ -2,7 +2,6 @@
 \usepackage{booktabs}
 \usepackage{dcolumn}
 \usepackage{graphicx}
-\usepackage{adjustbox}
 \usepackage[landscape, margin=0.7in]{geometry}
 \begin{document}
 \small
@@ -11,7 +10,7 @@
 \centering
 \caption{What Determines Whether a Country Exports Dark Matter? Panel (1980--2004)}
 \label{tab:table4}
-\begin{adjustbox}{max width=\linewidth}
+\resizebox{\linewidth}{!}{%
 \begin{tabular}{lllllll}
 & Pool -- Full & Pool -- Restr & Pool -- Ind & FE -- Full & FE -- Restr & FE -- Ind \\
 (Intercept) & -2.4069 & 0.7042 & 1.4095 &  &  &  \\
@@ -25,7 +24,7 @@ Output volatility & 34.6053 & -70.9364 & -103.7860 &  &  &  \\
 Num.Obs. & 1830 & 1358 & 368 & 1830 & 1358 & 368 \\
 R2 & 0.007 & 0.011 & 0.031 & 0.002 & 0.006 & 0.014 \\
 RMSE & 32.24 & 25.13 & 12.21 & 31.98 & 24.93 & 12.04 \\
-\end{tabular}
-\end{adjustbox}
+\end{tabular}%
+}
 \end{table}
 \end{document}

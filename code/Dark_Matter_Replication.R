@@ -1,5 +1,5 @@
 # ==============================================================================
-#
+# V1
 # Paper Replication - Hausmann & Sturzenegger (2006)
 # "Global Imbalances or Bad Accounting? The Missing Dark Matter in the Wealth of Nations"
 #
@@ -164,11 +164,12 @@ eu <- c("AUT","BEL","DNK","FIN","FRA","DEU","GRC","IRL","ITA","LUX","NLD",
 # FIX: Romania est "ROU" dans le BOP (pas "ROM"). Le code original utilisait
 # "ROM" ce qui empêchait la jointure avec les données BOP → Romania disparaissait.
 #
-# 7 pays irrécupérables avec les données actuelles (NII = 0 sur 1980-2003
-# dans le portail BOP ; données présentes dans IFS 2005 utilisé par H&S) :
-# AUT, BFA, CIV, IRL, MOZ, RWA, YEM
-# → max 102 obs (vs 109 dans l'article) avec les sources disponibles.
-# AUT et IRL sont aussi dans countries_79 → max ~77 obs pour Table 3 col (i).
+# 7 pays non récupérables avec notre extrait BOP actuel :
+# AUT, BFA, CIV, IRL, MOZ, RWA, YEM ont 0 observation non manquante
+# pour les séries historiques de CA et de revenu primaire / investissement
+# sur 1980-2003 dans notre fichier BOP brut.
+# Ces pays ne peuvent donc pas être inclus dans les calculs de dark matter
+# sans compléter la source de données.
 
 countries_109 <- c("ALB","AGO","ARG","AUS","AUT","BHR","BGD","BEN","BOL","BWA",
                    "BRA","BGR","BFA","KHM","CMR","CAN","CHL","CHN","COL","COG",
@@ -255,6 +256,12 @@ panel <- panel %>%
   ) %>%
   ungroup()
 
+panel <- panel %>%
+  mutate(
+    dm_exp_flow = ca_dm - ca_usd,
+    dm_exp_flow_gdp = dm_exp_flow / gdp_usd * 100
+  )
+
 # ==============================================================================
 #
 # Part 4 — US dark matter stock
@@ -306,41 +313,184 @@ panel <- left_join(panel, vol, by = "iso3c")
 
 # ==============================================================================
 #
-# Part 6 — Cross-section dataset (cumulative 1980-2003)
+# Part 6 — Cross-section dataset (strict cumulative 1980-2003)
 #
 # ==============================================================================
+
+safe_first <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) NA else x[1]
+}
+
+mean_or_na <- function(x) {
+  if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+}
+
+value_at <- function(x, year, target_year) {
+  v <- x[year == target_year]
+  v <- v[!is.na(v)]
+  if (length(v) == 0) NA_real_ else v[1]
+}
 
 cs <- panel %>%
   filter(year >= y_cs, year <= y_cs_end) %>%
   group_by(iso3c) %>%
   summarise(
-    country        = first(na.omit(country)),
-    cum_oca_bn     = sum(ca_usd, na.rm = TRUE) / 1e3,
-    cum_dm_bn      = { v <- nfa_dm[!is.na(nfa_dm)]
-    if (length(v) < 2) NA_real_
-    else (last(v) - first(v)) / 1e3 },
-    dm_exp_bn      = cum_dm_bn - cum_oca_bn,
-    gdp03_bn       = first(na.omit(gdp_usd[year == y_cs_end])) / 1e3,
-    cum_oca_gdp    = cum_oca_bn / gdp03_bn * 100,
-    cum_dm_gdp     = cum_dm_bn  / gdp03_bn * 100,
-    dm_exp_gdp     = dm_exp_bn  / gdp03_bn * 100,
-    fdi_assets_gdp = mean(fdi_assets_gdp[year %in% 2002:y_cs_end], na.rm = TRUE),
-    fdi_liab_gdp   = mean(fdi_liab_gdp  [year %in% 2002:y_cs_end], na.rm = TRUE),
-    output_vol     = first(na.omit(output_vol)),
-    rule_of_law    = first(na.omit(rule_of_law)),
-    rnd_avg        = mean(rnd, na.rm = TRUE),
-    opec           = first(opec_d),
-    hipc           = first(hipc_d),
+    country = safe_first(country),
+    
+    # Coverage
+    n_ca = sum(!is.na(ca_usd)),
+    n_nii = sum(!is.na(nii_usd)),
+    has_ca_complete = n_ca == length(y_cs:y_cs_end),
+    
+    # Cumulative official current account.
+    # Strict version: only if all annual CA values are available.
+    cum_oca_bn = if_else(
+      has_ca_complete,
+      sum(ca_usd, na.rm = TRUE) / 1e3,
+      NA_real_
+    ),
+    
+    # Dark-matter change: exactly 2003 minus 1980.
+    nfa_dm_1980 = value_at(nfa_dm, year, y_cs),
+    nfa_dm_2003 = value_at(nfa_dm, year, y_cs_end),
+    cum_dm_bn = if_else(
+      !is.na(nfa_dm_1980) & !is.na(nfa_dm_2003),
+      (nfa_dm_2003 - nfa_dm_1980) / 1e3,
+      NA_real_
+    ),
+    
+    dm_exp_bn = cum_dm_bn - cum_oca_bn,
+    
+    # GDP denominator: exactly 2003 GDP.
+    gdp03_bn = value_at(gdp_usd, year, y_cs_end) / 1e3,
+    
+    cum_oca_gdp = cum_oca_bn / gdp03_bn * 100,
+    cum_dm_gdp  = cum_dm_bn  / gdp03_bn * 100,
+    dm_exp_gdp  = dm_exp_bn  / gdp03_bn * 100,
+    
+    # FDI stocks: exactly 2003, not 2002-2003 average.
+    fdi_assets_gdp = value_at(fdi_assets_gdp, year, y_cs_end),
+    fdi_liab_gdp   = value_at(fdi_liab_gdp,   year, y_cs_end),
+    
+    output_vol  = safe_first(output_vol),
+    rule_of_law = safe_first(rule_of_law),
+    rnd_avg     = mean_or_na(rnd),
+    opec        = safe_first(opec_d),
+    hipc        = safe_first(hipc_d),
+    
     .groups = "drop"
   )
 
 # Diagnostic
 missing_dm <- cs$iso3c[is.na(cs$cum_dm_bn)]
+
 message(sprintf(
-  "Obs disponibles pour Tables 1 & 2 : %d / 109\nPays sans NII (NFA_DM non calculable) : %s\n",
+  "Obs disponibles pour Tables 1 & 2 : %d / 109\nPays sans NII exploitable : %s\n",
   sum(!is.na(cs$cum_dm_bn) & !is.na(cs$cum_oca_bn) & cs$iso3c %in% countries_109),
   paste(missing_dm[missing_dm %in% countries_109], collapse = ", ")
 ))
+
+# ==============================================================================
+# Alternative cross-section: best available within 1980-2003
+# Main specification for replication with current data
+# ==============================================================================
+
+cs_strict <- cs
+
+cs_available <- panel %>%
+  filter(year >= y_cs, year <= y_cs_end) %>%
+  group_by(iso3c) %>%
+  summarise(
+    country = safe_first(country),
+    
+    n_ca = sum(!is.na(ca_usd)),
+    n_nii = sum(!is.na(nii_usd)),
+    
+    first_dm_year = ifelse(
+      sum(!is.na(nfa_dm)) > 0,
+      min(year[!is.na(nfa_dm)]),
+      NA_integer_
+    ),
+    last_dm_year = ifelse(
+      sum(!is.na(nfa_dm)) > 0,
+      max(year[!is.na(nfa_dm)]),
+      NA_integer_
+    ),
+    
+    cum_oca_bn = ifelse(
+      n_ca > 0,
+      sum(ca_usd, na.rm = TRUE) / 1e3,
+      NA_real_
+    ),
+    
+    cum_dm_bn = {
+      v <- nfa_dm[!is.na(nfa_dm)]
+      if (length(v) < 2) NA_real_
+      else (last(v) - first(v)) / 1e3
+    },
+    
+    dm_exp_bn = cum_dm_bn - cum_oca_bn,
+    
+    gdp03_bn = value_at(gdp_usd, year, y_cs_end) / 1e3,
+    
+    cum_oca_gdp = cum_oca_bn / gdp03_bn * 100,
+    cum_dm_gdp  = cum_dm_bn  / gdp03_bn * 100,
+    dm_exp_gdp  = dm_exp_bn  / gdp03_bn * 100,
+    
+    # H&S use 2003 FDI stocks.
+    # If exact 2003 is missing in current data, fallback to 2002-2003 average.
+    fdi_assets_gdp_2003 = value_at(fdi_assets_gdp, year, y_cs_end),
+    fdi_liab_gdp_2003   = value_at(fdi_liab_gdp,   year, y_cs_end),
+    
+    fdi_assets_gdp = ifelse(
+      !is.na(fdi_assets_gdp_2003),
+      fdi_assets_gdp_2003,
+      mean_or_na(fdi_assets_gdp[year %in% 2002:y_cs_end])
+    ),
+    
+    fdi_liab_gdp = ifelse(
+      !is.na(fdi_liab_gdp_2003),
+      fdi_liab_gdp_2003,
+      mean_or_na(fdi_liab_gdp[year %in% 2002:y_cs_end])
+    ),
+    
+    output_vol  = safe_first(output_vol),
+    rule_of_law = safe_first(rule_of_law),
+    rnd_avg     = mean_or_na(rnd),
+    opec        = safe_first(opec_d),
+    hipc        = safe_first(hipc_d),
+    
+    .groups = "drop"
+  )
+
+# Use the available-data version as the main replication sample
+cs <- cs_available
+
+sample_compare <- tibble(
+  specification = c("strict endpoints", "available within 1980-2003"),
+  table1_full_n = c(
+    cs_strict %>% filter(iso3c %in% countries_109,
+                         !is.na(cum_dm_bn), !is.na(cum_oca_bn)) %>% nrow(),
+    cs_available %>% filter(iso3c %in% countries_109,
+                            !is.na(cum_dm_bn), !is.na(cum_oca_bn)) %>% nrow()
+  ),
+  table3_79_n = c(
+    cs_strict %>% filter(iso3c %in% countries_79,
+                         !is.na(dm_exp_gdp),
+                         !is.na(fdi_assets_gdp),
+                         !is.na(fdi_liab_gdp),
+                         !is.na(output_vol)) %>% nrow(),
+    cs_available %>% filter(iso3c %in% countries_79,
+                            !is.na(dm_exp_gdp),
+                            !is.na(fdi_assets_gdp),
+                            !is.na(fdi_liab_gdp),
+                            !is.na(output_vol)) %>% nrow()
+  )
+)
+
+print(sample_compare)
+
 
 
 # ==============================================================================
@@ -574,12 +724,17 @@ save_fig(fig8, "fig8_us_dm_stock")
 #
 # Part 8 — Regression tables
 #
-# compile_table() :
-#   table_number : injecte \setcounter{table}{N-1} → bon numéro dans le PDF
-#   landscape    : orientation paysage
-#   fit_width    : enveloppe le tabular dans adjustbox{max width=\linewidth}
-#                  → réduction automatique garantie, sans distorsion
-#                  → résout le débordement de Table 3
+# compile_table():
+#   - table_number: sets the table counter so that each standalone PDF has
+#     the correct table number.
+#   - landscape: compiles wide tables in landscape format.
+#   - fit_width: resizes the tabular to \linewidth using graphicx::\resizebox.
+#
+# IMPORTANT FIX:
+#   This version does NOT use adjustbox.
+#   The previous V1 version loaded \usepackage{adjustbox}, but adjustbox.sty
+#   was missing in TinyTeX, so the .tex files were updated while the PDFs were
+#   not regenerated. This version uses only graphicx, which is already loaded.
 #
 # ==============================================================================
 
@@ -594,19 +749,21 @@ compile_table <- function(tex_content, filename, landscape = FALSE,
   
   counter_cmd <- paste0("\\setcounter{table}{", table_number - 1L, "}\n")
   
-  # Wrap tabular dans adjustbox pour forcer le respect de \linewidth.
-  # fixed = TRUE traite la chaîne comme littérale (pas de regex) :
-  # sûr même si le LaTeX contient des caractères spéciaux.
+  # Fit wide tables without adjustbox.
+  # graphicx provides \\resizebox{\\linewidth}{!}{...}.
+  # fixed = TRUE treats the patterns literally and avoids regex issues.
   if (fit_width) {
     tex_content <- sub(
       "\\begin{tabular}",
-      "\\begin{adjustbox}{max width=\\linewidth}\n\\begin{tabular}",
-      tex_content, fixed = TRUE
+      "\\resizebox{\\linewidth}{!}{%\n\\begin{tabular}",
+      tex_content,
+      fixed = TRUE
     )
     tex_content <- sub(
       "\\end{tabular}",
-      "\\end{tabular}\n\\end{adjustbox}",
-      tex_content, fixed = TRUE
+      "\\end{tabular}%\n}",
+      tex_content,
+      fixed = TRUE
     )
   }
   
@@ -615,7 +772,6 @@ compile_table <- function(tex_content, filename, landscape = FALSE,
     "\\usepackage{booktabs}\n",
     "\\usepackage{dcolumn}\n",
     "\\usepackage{graphicx}\n",
-    "\\usepackage{adjustbox}\n",
     geom,
     "\\begin{document}\n",
     "\\small\n",
@@ -625,16 +781,39 @@ compile_table <- function(tex_content, filename, landscape = FALSE,
   )
   
   tables_dir <- here("code", "output", "tables")
-  writeLines(full_doc, file.path(tables_dir, paste0(filename, ".tex")))
+  tex_path <- file.path(tables_dir, paste0(filename, ".tex"))
+  pdf_path <- file.path(tables_dir, paste0(filename, ".pdf"))
+  
+  writeLines(full_doc, tex_path)
+  
+  # Remove old PDF before compiling so a stale PDF cannot be mistaken
+  # for a successfully regenerated table.
+  if (file.exists(pdf_path)) {
+    removed <- tryCatch(
+      file.remove(pdf_path),
+      warning = function(w) FALSE,
+      error   = function(e) FALSE
+    )
+    if (!isTRUE(removed)) {
+      stop(
+        "Cannot remove old PDF: ", pdf_path,
+        "\nClose the PDF if it is open, then rerun the script."
+      )
+    }
+  }
   
   old_wd <- setwd(tables_dir)
   on.exit(setwd(old_wd), add = TRUE)
   
-  tryCatch(
-    tinytex::pdflatex(paste0(filename, ".tex")),
-    error = function(e) message("Compilation failed for ", filename,
-                                " — check tinytex is installed.")
-  )
+  tinytex::pdflatex(paste0(filename, ".tex"))
+  
+  if (!file.exists(pdf_path)) {
+    stop(
+      "PDF was not created: ", pdf_path,
+      "\nCheck the LaTeX log file: ",
+      file.path(tables_dir, paste0(filename, ".log"))
+    )
+  }
 }
 
 # ── Table 1 ────────────────────────────────────────────────────────────────────
@@ -664,7 +843,10 @@ tex1 <- capture.output(
             style            = "aer",
             type             = "latex")
 )
-compile_table(paste(tex1, collapse = "\n"), "table1", table_number = 1)
+
+compile_table(paste(tex1, collapse = "\n"),
+              "table1",
+              table_number = 1)
 
 # ── Table 2 ────────────────────────────────────────────────────────────────────
 
@@ -691,58 +873,212 @@ tex2 <- capture.output(
             style            = "aer",
             type             = "latex")
 )
-compile_table(paste(tex2, collapse = "\n"), "table2", table_number = 2)
+
+compile_table(paste(tex2, collapse = "\n"),
+              "table2",
+              table_number = 2)
 
 # ── Table 3 ────────────────────────────────────────────────────────────────────
-# landscape = TRUE + fit_width = TRUE : adjustbox garantit que le tabular
-# tient dans \linewidth quelle que soit sa largeur native.
 
+# ==============================================================================
+# Table 3 — Sources of Dark Matter: Cross-Section Evidence
+# ==============================================================================
+
+# Helper si pas déjà défini plus haut
 winsor <- function(x, p = 0.01) {
-  q <- quantile(x, c(p, 1-p), na.rm = TRUE)
+  if (all(is.na(x))) return(x)
+  q <- quantile(x, c(p, 1 - p), na.rm = TRUE)
   pmax(pmin(x, q[2]), q[1])
 }
 
-d3 <- cs %>%
-  filter(iso3c %in% countries_79, !is.na(dm_exp_gdp)) %>%
-  mutate(across(c(dm_exp_gdp, fdi_assets_gdp, fdi_liab_gdp, output_vol), winsor))
+# Variables en ratios et non en points de pourcentage
+cs <- cs %>%
+  mutate(
+    dm_exp_ratio = dm_exp_gdp / 100,
+    fdi_assets_ratio = fdi_assets_gdp / 100,
+    fdi_liab_ratio = fdi_liab_gdp / 100
+  )
 
-model_ind <- lm(dm_exp_gdp ~ fdi_assets_gdp + fdi_liab_gdp + output_vol,
-                data = cs %>%
-                  filter(iso3c %in% industrial,
-                         !is.na(dm_exp_gdp), !is.na(fdi_assets_gdp),
-                         !is.na(fdi_liab_gdp), !is.na(output_vol)))
+# Échantillon élargi utilisé dans certaines colonnes.
+# Si countries_99 existe déjà dans votre script, cette ligne ne pose pas problème.
+countries_99 <- setdiff(
+  countries_109,
+  c("BFA", "ETH", "MDG", "MWI", "MLI", "NPL", "NER", "RWA", "TGO", "UGA")
+)
+
+d3_79 <- cs %>%
+  filter(
+    iso3c %in% countries_79,
+    !is.na(dm_exp_ratio),
+    !is.na(fdi_assets_ratio),
+    !is.na(fdi_liab_ratio),
+    !is.na(output_vol)
+  ) %>%
+  mutate(across(c(dm_exp_ratio, fdi_assets_ratio, fdi_liab_ratio, output_vol), winsor))
+
+d3_99 <- cs %>%
+  filter(
+    iso3c %in% countries_99,
+    !is.na(dm_exp_ratio),
+    !is.na(fdi_assets_ratio),
+    !is.na(fdi_liab_ratio),
+    !is.na(output_vol)
+  ) %>%
+  mutate(across(c(dm_exp_ratio, fdi_assets_ratio, fdi_liab_ratio, output_vol), winsor))
+
+d3_ind <- cs %>%
+  filter(
+    iso3c %in% industrial,
+    !is.na(dm_exp_ratio),
+    !is.na(fdi_assets_ratio),
+    !is.na(fdi_liab_ratio),
+    !is.na(output_vol)
+  ) %>%
+  mutate(across(c(dm_exp_ratio, fdi_assets_ratio, fdi_liab_ratio, output_vol), winsor))
 
 t3 <- list(
-  "(i)"              = lm(dm_exp_gdp ~ fdi_assets_gdp + fdi_liab_gdp +
-                            output_vol, d3),
-  "(ii)"             = lm(dm_exp_gdp ~ fdi_assets_gdp + fdi_liab_gdp +
-                            output_vol + rule_of_law + rnd_avg, d3),
-  "(iii)"            = lm(dm_exp_gdp ~ fdi_assets_gdp + fdi_liab_gdp +
-                            output_vol + rule_of_law + rnd_avg + opec + hipc, d3),
-  "(vii) Industrial" = model_ind
+  "(i)" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol,
+    data = d3_79
+  ),
+  
+  "(ii)" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol +
+      rule_of_law + rnd_avg,
+    data = d3_79
+  ),
+  
+  "(iii)" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol +
+      rule_of_law + rnd_avg + opec + hipc,
+    data = d3_79
+  ),
+  
+  "(iv)" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol,
+    data = d3_99
+  ),
+  
+  "(v)" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol +
+      rule_of_law + rnd_avg,
+    data = d3_99
+  ),
+  
+  "(vi)" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol +
+      rule_of_law + rnd_avg + opec + hipc,
+    data = d3_99
+  ),
+  
+  "(vii) Industrial" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol,
+    data = d3_ind
+  )
 )
 
-tex3 <- capture.output(
-  stargazer(t3[[1]], t3[[2]], t3[[3]], t3[[4]],
-            column.labels    = names(t3),
-            title            = "What Determines Whether a Country Exports Dark Matter? Cross-Section (1980--2003)",
-            label            = "tab:table3",
-            dep.var.labels   = "Dark matter exports (\\% of 2003 GDP)",
-            covariate.labels = c("FDI assets (\\% GDP)", "FDI liabilities (\\% GDP)",
-                                 "Output volatility", "Rule of Law",
-                                 "R\\&D (\\% GDP)", "OPEC dummy", "HIPC dummy",
-                                 "Constant"),
-            omit.stat        = c("f", "ser", "adj.rsq"),
-            notes            = paste0("Standard errors in parentheses. ",
-                                      "* p$<$0.10, ** p$<$0.05, *** p$<$0.01. ",
-                                      "Variables winsorised at the 1\\% level. ",
-                                      "Col. (vii): 21 industrial countries, no winsorisation."),
-            notes.align      = "l",
-            style            = "aer",
-            type             = "latex")
+print(sapply(t3, nobs))
+
+# ==============================================================================
+# Table 3 display — split into two LaTeX tables
+# ==============================================================================
+
+dir.create(here("code", "output", "tables"),
+           recursive = TRUE, showWarnings = FALSE)
+
+coef_names_t3 <- c(
+  "fdi_assets_ratio" = "FDI assets / GDP",
+  "fdi_liab_ratio" = "FDI liabilities / GDP",
+  "output_vol" = "Output volatility",
+  "rule_of_law" = "Rule of Law",
+  "rnd_avg" = "R\\&D (\\% GDP)",
+  "opec" = "OPEC dummy",
+  "hipc" = "HIPC dummy"
 )
-compile_table(paste(tex3, collapse = "\n"), "table3",
-              landscape = TRUE, table_number = 3, fit_width = TRUE)
+
+t3_left  <- t3[1:3]
+t3_right <- t3[4:7]
+
+tex3_left <- modelsummary(
+  t3_left,
+  stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt = "%.3f",
+  coef_rename = coef_names_t3,
+  gof_omit = "AIC|BIC|Log|F|RMSE",
+  output = "latex_tabular"
+)
+
+tex3_right <- modelsummary(
+  t3_right,
+  stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt = "%.3f",
+  coef_rename = coef_names_t3,
+  gof_omit = "AIC|BIC|Log|F|RMSE",
+  output = "latex_tabular"
+)
+
+wrap_table <- function(tabular, caption, label) {
+  paste0(
+    "\\begin{table}[htbp]\n",
+    "\\centering\n",
+    "\\caption{", caption, "}\n",
+    "\\label{", label, "}\n",
+    "\\scriptsize\n",
+    tabular, "\n",
+    "\\begin{minipage}{0.95\\linewidth}\n",
+    "\\footnotesize Notes: Standard errors in parentheses. ",
+    "Dependent variable: cumulative dark matter exports over 1980--2003, divided by 2003 GDP. ",
+    "Variables are expressed as ratios where relevant and winsorised at the 1\\% level. ",
+    "Columns (i)--(iii) use the H\\&S 79-country sample when data are available. ",
+    "Columns (iv)--(vi) use the H\\&S 99-country sample when data are available. ",
+    "Column (vii) uses the H\\&S industrial-country sample when data are available. ",
+    "The lower number of observations is due to missing historical BOP income data ",
+    "and, in columns with controls, limited WDI R\\&D coverage. ",
+    "* p$<$0.10, ** p$<$0.05, *** p$<$0.01.\n",
+    "\\end{minipage}\n",
+    "\\end{table}"
+  )
+}
+
+writeLines(
+  wrap_table(
+    tex3_left,
+    "Sources of Dark Matter: Cross-Section Evidence, columns (i)--(iii)",
+    "tab:table3a"
+  ),
+  here("code", "output", "tables", "table3a.tex")
+)
+
+writeLines(
+  wrap_table(
+    tex3_right,
+    "Sources of Dark Matter: Cross-Section Evidence, columns (iv)--(vii)",
+    "tab:table3b"
+  ),
+  here("code", "output", "tables", "table3b.tex")
+)
+
+if (exists("compile_table")) {
+  compile_table(
+    wrap_table(tex3_left,
+               "Sources of Dark Matter: Cross-Section Evidence, columns (i)--(iii)",
+               "tab:table3a"),
+    "table3a",
+    landscape = FALSE,
+    table_number = 3,
+    fit_width = TRUE
+  )
+  
+  compile_table(
+    wrap_table(tex3_right,
+               "Sources of Dark Matter: Cross-Section Evidence, columns (iv)--(vii)",
+               "tab:table3b"),
+    "table3b",
+    landscape = FALSE,
+    table_number = 3,
+    fit_width = TRUE
+  )
+}
 
 # ── Table 4 ────────────────────────────────────────────────────────────────────
 
@@ -750,17 +1086,18 @@ d4 <- panel %>%
   filter(iso3c %in% countries_79,
          year >= 1980, year <= 2004,
          !is.na(ca_dm_gdp), !is.na(output_vol))
-mk_pd <- function(df) plm::pdata.frame(df, index = c("iso3c","year"))
+
+mk_pd <- function(df) plm::pdata.frame(df, index = c("iso3c", "year"))
 rhs   <- ca_dm_gdp ~ fdi_liab_gdp + fdi_assets_gdp + output_vol
 
 t4 <- list(
   "Pool -- Full"  = plm::plm(rhs, mk_pd(d4), model = "pooling"),
-  "Pool -- Restr" = plm::plm(rhs, mk_pd(filter(d4, opec_d==0, hipc_d==0)),
+  "Pool -- Restr" = plm::plm(rhs, mk_pd(filter(d4, opec_d == 0, hipc_d == 0)),
                              model = "pooling"),
   "Pool -- Ind"   = plm::plm(rhs, mk_pd(filter(d4, iso3c %in% industrial)),
                              model = "pooling"),
   "FE -- Full"    = plm::plm(rhs, mk_pd(d4), model = "within"),
-  "FE -- Restr"   = plm::plm(rhs, mk_pd(filter(d4, opec_d==0, hipc_d==0)),
+  "FE -- Restr"   = plm::plm(rhs, mk_pd(filter(d4, opec_d == 0, hipc_d == 0)),
                              model = "within"),
   "FE -- Ind"     = plm::plm(rhs, mk_pd(filter(d4, iso3c %in% industrial)),
                              model = "within")
@@ -790,36 +1127,108 @@ tex4_wrapped <- paste0(
   "\\end{table}"
 )
 
-compile_table(tex4_wrapped, "table4",
-              landscape = TRUE, table_number = 4, fit_width = TRUE)
+compile_table(tex4_wrapped,
+              "table4",
+              landscape = TRUE,
+              table_number = 4,
+              fit_width = TRUE)
+
+
+
+
+
+# ── Table 4b — Panel, annual dark matter exports ───────────────────────────────
+
+d4b <- panel %>%
+  filter(iso3c %in% countries_79,
+         year >= 1980, year <= 2004,
+         !is.na(dm_exp_flow_gdp),
+         !is.na(fdi_liab_gdp),
+         !is.na(fdi_assets_gdp),
+         !is.na(output_vol))
+
+rhs_b <- dm_exp_flow_gdp ~ fdi_liab_gdp + fdi_assets_gdp + output_vol
+
+t4b <- list(
+  "Pool -- Full"  = plm::plm(rhs_b, mk_pd(d4b), model = "pooling"),
+  "Pool -- Restr" = plm::plm(rhs_b, mk_pd(filter(d4b, opec_d == 0, hipc_d == 0)),
+                             model = "pooling"),
+  "Pool -- Ind"   = plm::plm(rhs_b, mk_pd(filter(d4b, iso3c %in% industrial)),
+                             model = "pooling"),
+  "FE -- Full"    = plm::plm(rhs_b, mk_pd(d4b), model = "within"),
+  "FE -- Restr"   = plm::plm(rhs_b, mk_pd(filter(d4b, opec_d == 0, hipc_d == 0)),
+                             model = "within"),
+  "FE -- Ind"     = plm::plm(rhs_b, mk_pd(filter(d4b, iso3c %in% industrial)),
+                             model = "within")
+)
+
+tex4b_ms <- modelsummary(
+  t4b,
+  stars    = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt      = "%.4f",
+  gof_omit = "AIC|BIC|Log|Adj|Within",
+  coef_rename = c(
+    "fdi_liab_gdp"   = "FDI liabilities (% GDP)",
+    "fdi_assets_gdp" = "FDI assets (% GDP)",
+    "output_vol"     = "Output volatility"
+  ),
+  output = "latex_tabular"
+)
+
+tex4b_wrapped <- paste0(
+  "\\begin{table}[htbp]\n",
+  "\\centering\n",
+  "\\caption{What Determines Annual Dark Matter Exports? Panel (1980--2004)}\n",
+  "\\label{tab:table4b}\n",
+  tex4b_ms, "\n",
+  "\\begin{minipage}{0.95\\linewidth}\n",
+  "\\footnotesize Notes: The dependent variable is annual dark matter exports, ",
+  "$CA^{DM}_{it} - CA^{official}_{it}$, divided by GDP. ",
+  "Pooled and country fixed-effects specifications are reported. ",
+  "\\end{minipage}\n",
+  "\\end{table}"
+)
+
+compile_table(tex4b_wrapped,
+              "table4b",
+              landscape = TRUE,
+              table_number = 5,
+              fit_width = TRUE)
 
 message("\nDone.")
 message("Figures (PDF + PNG) : code/output/figures/")
 message("Tables  (PDF + TEX) : code/output/tables/")
-
+message("Main replication uses cs_available; cs_strict is kept as robustness diagnostic.")
 
 # ==============================================================================
 #
 # Summary — Replication of Hausmann & Sturzenegger (2006)
 #
-# DATA DISCREPANCY NOTE
+# DATA COVERAGE NOTE
 #
 # Bug corrigé : "ROM" → "ROU" (code ISO3C de la Roumanie) dans countries_109
 # et countries_79. Le code original ne faisait pas la jointure avec le BOP
-# pour la Roumanie, la perdant silencieusement. +1 obs pour Tables 1 & 2.
+# pour la Roumanie, la perdant silencieusement.
 #
-# Écart résiduel irréductible : 7 pays (AUT, BFA, CIV, IRL, MOZ, RWA, YEM)
-# ont NII = 0 sur toute la période dans le portail BOP actuel. L'EWN possède
-# leurs données de stock NIP mais pas les flux NII → NFA_DM non calculable.
-# Ces pays figuraient dans l'IFS CD-ROM 2005 utilisé par H&S. Max : 102 obs
-# (vs 109 dans l'article) sans source NII alternative.
-# AUT et IRL étant aussi dans countries_79, max ~77 obs pour Table 3 col (i).
+# Couverture des données :
+# Dans notre extrait IMF BOP actuel, 7 pays de la liste H&S 109
+# (AUT, BFA, CIV, IRL, MOZ, RWA, YEM) ont 0 observation non manquante
+# pour les séries historiques de compte courant et de revenu primaire /
+# revenu d'investissement sur 1980-2003.
+#
+# Nous avons vérifié cela directement dans le fichier BOP brut, avant tout
+# nettoyage ou jointure. Nous avons aussi cherché toutes les séries candidates
+# liées à income / investment / primary / direct / portfolio / interest, sans
+# trouver de série alternative exploitable sur 1980-2003 pour ces pays.
+#
+# Ces pays ne peuvent donc pas être inclus dans le calcul du dark matter sans
+# changer ou compléter la source de données.
+#
+# Pour Table 3, les pertes supplémentaires dans les colonnes avec contrôles
+# viennent principalement de la couverture limitée de la série WDI R&D.
 #
 # [TO BE COMPLETED: comparison with original results]
 #
-# ==============================================================================
-
-
 # ==============================================================================
 # ==============================================================================
 #
@@ -827,3 +1236,374 @@ message("Tables  (PDF + TEX) : code/output/tables/")
 #
 # ==============================================================================
 # ==============================================================================
+
+# ==============================================================================
+# Extension 1 — Augmented proxy sample
+#
+# Goal:
+# Test whether the main results are sensitive to supplementing missing BOP income
+# data with WDI national-accounts net income from abroad (NY.GSR.NFCY.CD).
+#
+# Important:
+# This is NOT the baseline replication and NOT the original H&S data source.
+# It is a proxy robustness check.
+# ==============================================================================
+
+
+# ==============================================================================
+# Augmented proxy sample — conservative version
+# Uses WDI national-accounts net income only when both 1980 and 2003 are available
+# Not used as baseline
+# ==============================================================================
+
+# ==============================================================================
+# WDI alternative income coverage
+# ==============================================================================
+
+if (!requireNamespace("WDI", quietly = TRUE)) install.packages("WDI")
+library(WDI)
+
+missing_nii_countries <- c("AUT", "IRL", "CIV", "BFA", "MOZ", "RWA", "YEM")
+
+wdi_grid <- tidyr::expand_grid(
+  iso3c = missing_nii_countries,
+  year = 1980:2003
+)
+
+fetch_wdi_indicator <- function(code, varname) {
+  
+  message("Downloading ", code, " as ", varname, "...")
+  
+  out <- tryCatch(
+    {
+      WDI::WDI(
+        country = missing_nii_countries,
+        indicator = setNames(code, varname),
+        start = 1980,
+        end = 2003,
+        extra = FALSE
+      )
+    },
+    error = function(e) {
+      message("Failed to download ", code, ": ", e$message)
+      NULL
+    }
+  )
+  
+  if (is.null(out) || nrow(out) == 0) {
+    out <- wdi_grid
+    out[[varname]] <- NA_real_
+    return(out)
+  }
+  
+  if (!varname %in% names(out)) {
+    out[[varname]] <- NA_real_
+  }
+  
+  out %>%
+    select(iso3c, year, all_of(varname))
+}
+
+wdi_bop_net  <- fetch_wdi_indicator("BN.GSR.FCTY.CD", "nii_wdi_bop")
+wdi_na_net   <- fetch_wdi_indicator("NY.GSR.NFCY.CD", "nii_wdi_na")
+wdi_receipts <- fetch_wdi_indicator("BX.GSR.FCTY.CD", "income_receipts_bop")
+wdi_payments <- fetch_wdi_indicator("BM.GSR.FCTY.CD", "income_payments_bop")
+
+wdi_alt_check <- list(
+  wdi_grid,
+  wdi_bop_net,
+  wdi_na_net,
+  wdi_receipts,
+  wdi_payments
+) %>%
+  purrr::reduce(full_join, by = c("iso3c", "year")) %>%
+  arrange(iso3c, year) %>%
+  mutate(
+    nii_wdi_bop_constructed = if_else(
+      !is.na(income_receipts_bop) & !is.na(income_payments_bop),
+      income_receipts_bop - income_payments_bop,
+      NA_real_
+    )
+  )
+
+wdi_alt_coverage <- wdi_alt_check %>%
+  group_by(iso3c) %>%
+  summarise(
+    n_bop_net = sum(!is.na(nii_wdi_bop)),
+    n_na_net  = sum(!is.na(nii_wdi_na)),
+    n_receipts = sum(!is.na(income_receipts_bop)),
+    n_payments = sum(!is.na(income_payments_bop)),
+    n_bop_constructed = sum(!is.na(nii_wdi_bop_constructed)),
+    has_na_1980 = !is.na(nii_wdi_na[year == 1980][1]),
+    has_na_2003 = !is.na(nii_wdi_na[year == 2003][1]),
+    first_na_year = ifelse(
+      n_na_net > 0,
+      min(year[!is.na(nii_wdi_na)]),
+      NA_integer_
+    ),
+    last_na_year = ifelse(
+      n_na_net > 0,
+      max(year[!is.na(nii_wdi_na)]),
+      NA_integer_
+    ),
+    .groups = "drop"
+  )
+
+print(wdi_alt_coverage, n = Inf)
+
+wdi_na_eligible <- wdi_alt_coverage %>%
+  filter(has_na_1980, has_na_2003) %>%
+  pull(iso3c)
+
+print(wdi_na_eligible)
+# Expected: AUT, BFA, CIV, RWA
+
+wdi_na_backup_conservative <- wdi_alt_check %>%
+  filter(iso3c %in% wdi_na_eligible) %>%
+  transmute(
+    iso3c,
+    year,
+    # WDI NY.GSR.NFCY.CD is in current US dollars.
+    # IMF BOP extract used in the replication is in millions of US dollars.
+    nii_wdi_na = nii_wdi_na / 1e6
+  )
+panel_augmented <- panel %>%
+  left_join(wdi_na_backup_conservative, by = c("iso3c", "year")) %>%
+  mutate(
+    nii_usd_baseline = nii_usd,
+    nii_usd_augmented = coalesce(nii_usd, nii_wdi_na),
+    nii_source = case_when(
+      !is.na(nii_usd) ~ "IMF_BOP",
+      is.na(nii_usd) & !is.na(nii_wdi_na) ~ "WDI_NA_proxy",
+      TRUE ~ NA_character_
+    ),
+    nfa_dm = nii_usd_augmented / r
+  ) %>%
+  arrange(iso3c, year) %>%
+  group_by(iso3c) %>%
+  mutate(
+    ca_dm = nfa_dm - lag(nfa_dm),
+    ca_dm_gdp = ca_dm / gdp_usd * 100,
+    dm_exp_flow = ca_dm - ca_usd,
+    dm_exp_flow_gdp = dm_exp_flow / gdp_usd * 100
+  ) %>%
+  ungroup()
+
+cs_augmented <- panel_augmented %>%
+  filter(year >= y_cs, year <= y_cs_end) %>%
+  group_by(iso3c) %>%
+  summarise(
+    country = safe_first(country),
+    
+    n_ca = sum(!is.na(ca_usd)),
+    n_nii = sum(!is.na(nii_usd_augmented)),
+    
+    first_dm_year = ifelse(
+      sum(!is.na(nfa_dm)) > 0,
+      min(year[!is.na(nfa_dm)]),
+      NA_integer_
+    ),
+    last_dm_year = ifelse(
+      sum(!is.na(nfa_dm)) > 0,
+      max(year[!is.na(nfa_dm)]),
+      NA_integer_
+    ),
+    
+    cum_oca_bn = ifelse(
+      n_ca > 0,
+      sum(ca_usd, na.rm = TRUE) / 1e3,
+      NA_real_
+    ),
+    
+    cum_dm_bn = {
+      v <- nfa_dm[!is.na(nfa_dm)]
+      if (length(v) < 2) NA_real_
+      else (last(v) - first(v)) / 1e3
+    },
+    
+    dm_exp_bn = cum_dm_bn - cum_oca_bn,
+    
+    gdp03_bn = value_at(gdp_usd, year, y_cs_end) / 1e3,
+    
+    cum_oca_gdp = cum_oca_bn / gdp03_bn * 100,
+    cum_dm_gdp  = cum_dm_bn  / gdp03_bn * 100,
+    dm_exp_gdp  = dm_exp_bn  / gdp03_bn * 100,
+    
+    fdi_assets_gdp_2003 = value_at(fdi_assets_gdp, year, y_cs_end),
+    fdi_liab_gdp_2003   = value_at(fdi_liab_gdp,   year, y_cs_end),
+    
+    fdi_assets_gdp = ifelse(
+      !is.na(fdi_assets_gdp_2003),
+      fdi_assets_gdp_2003,
+      mean_or_na(fdi_assets_gdp[year %in% 2002:y_cs_end])
+    ),
+    
+    fdi_liab_gdp = ifelse(
+      !is.na(fdi_liab_gdp_2003),
+      fdi_liab_gdp_2003,
+      mean_or_na(fdi_liab_gdp[year %in% 2002:y_cs_end])
+    ),
+    
+    output_vol  = safe_first(output_vol),
+    rule_of_law = safe_first(rule_of_law),
+    rnd_avg     = mean_or_na(rnd),
+    opec        = safe_first(opec_d),
+    hipc        = safe_first(hipc_d),
+    
+    source_has_proxy = any(nii_source == "WDI_NA_proxy", na.rm = TRUE),
+    
+    .groups = "drop"
+  )
+
+augmented_sample_compare <- tibble(
+  specification = c("baseline IMF BOP", "augmented WDI NA proxy"),
+  
+  table1_full_n = c(
+    cs %>%
+      filter(iso3c %in% countries_109,
+             !is.na(cum_dm_bn), !is.na(cum_oca_bn)) %>%
+      nrow(),
+    
+    cs_augmented %>%
+      filter(iso3c %in% countries_109,
+             !is.na(cum_dm_bn), !is.na(cum_oca_bn)) %>%
+      nrow()
+  ),
+  
+  table3_79_n = c(
+    cs %>%
+      filter(iso3c %in% countries_79,
+             !is.na(dm_exp_gdp),
+             !is.na(fdi_assets_gdp),
+             !is.na(fdi_liab_gdp),
+             !is.na(output_vol)) %>%
+      nrow(),
+    
+    cs_augmented %>%
+      filter(iso3c %in% countries_79,
+             !is.na(dm_exp_gdp),
+             !is.na(fdi_assets_gdp),
+             !is.na(fdi_liab_gdp),
+             !is.na(output_vol)) %>%
+      nrow()
+  ),
+  
+  recovered_proxy_countries = paste(wdi_na_eligible, collapse = ", ")
+)
+
+print(augmented_sample_compare)
+
+
+# ==============================================================================
+# Augmented Table 3 — proxy robustness
+# ==============================================================================
+
+cs_augmented <- cs_augmented %>%
+  mutate(
+    dm_exp_ratio = dm_exp_gdp / 100,
+    fdi_assets_ratio = fdi_assets_gdp / 100,
+    fdi_liab_ratio = fdi_liab_gdp / 100
+  )
+
+d3_aug_79 <- cs_augmented %>%
+  filter(
+    iso3c %in% countries_79,
+    !is.na(dm_exp_ratio),
+    !is.na(fdi_assets_ratio),
+    !is.na(fdi_liab_ratio),
+    !is.na(output_vol)
+  ) %>%
+  mutate(across(c(dm_exp_ratio, fdi_assets_ratio, fdi_liab_ratio, output_vol), winsor))
+
+d3_aug_99 <- cs_augmented %>%
+  filter(
+    iso3c %in% countries_99,
+    !is.na(dm_exp_ratio),
+    !is.na(fdi_assets_ratio),
+    !is.na(fdi_liab_ratio),
+    !is.na(output_vol)
+  ) %>%
+  mutate(across(c(dm_exp_ratio, fdi_assets_ratio, fdi_liab_ratio, output_vol), winsor))
+
+t3_aug <- list(
+  "(i)" = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol,
+             data = d3_aug_79),
+  
+  "(ii)" = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol +
+                rule_of_law + rnd_avg,
+              data = d3_aug_79),
+  
+  "(iii)" = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol +
+                 rule_of_law + rnd_avg + opec + hipc,
+               data = d3_aug_79),
+  
+  "(iv)" = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol,
+              data = d3_aug_99),
+  
+  "(v)" = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol +
+               rule_of_law + rnd_avg,
+             data = d3_aug_99),
+  
+  "(vi)" = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol +
+                rule_of_law + rnd_avg + opec + hipc,
+              data = d3_aug_99)
+)
+
+print(sapply(t3_aug, nobs))
+
+
+# ==============================================================================
+# Augmented Table 3 — export as PDF
+# ==============================================================================
+
+dir.create(here("code", "output", "tables"),
+           recursive = TRUE, showWarnings = FALSE)
+
+coef_names_t3_aug <- c(
+  "fdi_assets_ratio" = "FDI assets / GDP",
+  "fdi_liab_ratio" = "FDI liabilities / GDP",
+  "output_vol" = "Output volatility",
+  "rule_of_law" = "Rule of Law",
+  "rnd_avg" = "R\\&D (\\% GDP)",
+  "opec" = "OPEC dummy",
+  "hipc" = "HIPC dummy"
+)
+
+tex3_aug <- modelsummary(
+  t3_aug,
+  stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt = "%.3f",
+  coef_rename = coef_names_t3_aug,
+  gof_omit = "AIC|BIC|Log|F|RMSE",
+  output = "latex_tabular"
+)
+
+tex3_aug_wrapped <- paste0(
+  "\\begin{table}[htbp]\n",
+  "\\centering\n",
+  "\\caption{Augmented Proxy Robustness: Sources of Dark Matter, Cross-Section Evidence}\n",
+  "\\label{tab:table3_augmented}\n",
+  "\\scriptsize\n",
+  tex3_aug, "\n",
+  "\\begin{minipage}{0.95\\linewidth}\n",
+  "\\footnotesize Notes: Standard errors in parentheses. ",
+  "Dependent variable: cumulative dark matter exports over 1980--2003, divided by 2003 GDP. ",
+  "This table is a robustness check, not the baseline replication. ",
+  "The augmented sample supplements missing IMF BOP income data with WDI national-accounts net income from abroad ",
+  "only for countries with observations in both 1980 and 2003. ",
+  "Recovered proxy countries: ", paste(wdi_na_eligible, collapse = ", "), ". ",
+  "Variables are expressed as ratios where relevant and winsorised at the 1\\% level. ",
+  "* p$<$0.10, ** p$<$0.05, *** p$<$0.01.\n",
+  "\\end{minipage}\n",
+  "\\end{table}"
+)
+
+compile_table(
+  tex3_aug_wrapped,
+  "table3_augmented",
+  landscape = TRUE,
+  table_number = 6,
+  fit_width = TRUE
+)
+
+message("Augmented Table 3 created: code/output/tables/table3_augmented.pdf")
