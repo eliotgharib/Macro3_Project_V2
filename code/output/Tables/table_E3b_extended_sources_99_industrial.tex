@@ -1,0 +1,41 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{2}
+\renewcommand{\thetable}{E3b}
+\begin{table}[htbp]
+\centering
+\caption{Extended Table 3b: Sources of Dark Matter, 99-Country and Industrial Samples (1980--2022)}
+\label{tab:E3b_extended_sources_99_industrial}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lllll}
+& (iv) & (v) & (vi) & (vii) Industrial \\
+(Intercept) & 0.257 & 0.460 & 0.290 & 0.460 \\
+& (0.281) & (0.306) & (0.322) & (0.736) \\
+FDI assets / GDP & -0.695** & -0.539* & -0.398 & 0.075 \\
+& (0.271) & (0.285) & (0.293) & (1.136) \\
+FDI liabilities / GDP & 0.621** & 0.488* & 0.356 & -0.863 \\
+& (0.252) & (0.263) & (0.270) & (1.239) \\
+Output volatility & -19.892*** & -24.004*** & -17.826** & 2.691 \\
+& (6.107) & (6.569) & (7.360) & (28.974) \\
+Rule of Law &  & -0.244 & -0.239 &  \\
+&  & (0.151) & (0.165) &  \\
+OPEC dummy &  &  & -0.893 &  \\
+&  &  & (0.559) &  \\
+HIPC dummy &  &  & 0.252 &  \\
+&  &  & (0.410) &  \\
+Num.Obs. & 98 & 98 & 98 & 21 \\
+R2 & 0.144 & 0.167 & 0.199 & 0.498 \\
+R2 Adj. & 0.117 & 0.132 & 0.146 & 0.410 \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: Standard errors in parentheses. Dependent variable: cumulative dark matter exports over 1980--2022, divided by 2022 GDP. Variables are expressed as ratios where relevant and winsorised at the 1\% level. Columns (i)--(iii) use the H\&S 79-country sample when data are available. Columns (iv)--(vi) use the H\&S 99-country sample when data are available. Column (vii) uses the H\&S industrial-country sample when data are available. R\&D is omitted from the extended specification because the extended cross-section contains no usable R\&D observations.* p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}

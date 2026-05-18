@@ -1,0 +1,35 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage[landscape, margin=0.7in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{3}
+\renewcommand{\thetable}{E4}
+\begin{table}[htbp]
+\centering
+\caption{Extended Table 4: Panel Determinants of the Dark-Matter-Implied Current Account (1980--2022)}
+\label{tab:E4_extended_panel_CA_DM}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lllllll}
+& Pool -- Full & Pool -- Restr & Pool -- Ind & FE -- Full & FE -- Restr & FE -- Ind \\
+(Intercept) & -2.2907** & 1.9635 & 4.5655 &  &  &  \\
+& (1.0911) & (1.2907) & (3.1479) &  &  &  \\
+FDI liabilities (\textbackslash{}\% GDP) & -0.0201** & -0.0136 & -0.2949*** & -0.0084 & -0.0107 & -0.3044*** \\
+& (0.0097) & (0.0083) & (0.0645) & (0.0115) & (0.0097) & (0.0965) \\
+FDI assets (\textbackslash{}\% GDP) & 0.0185* & 0.0116 & 0.2355*** & 0.0067 & 0.0091 & 0.2654*** \\
+& (0.0105) & (0.0090) & (0.0571) & (0.0122) & (0.0103) & (0.0859) \\
+Output volatility & 3.4829 & -141.5154*** & -134.9655 &  &  &  \\
+& (25.1107) & (37.6406) & (128.9022) &  &  &  \\
+Num.Obs. & 3141 & 2350 & 694 & 3141 & 2350 & 694 \\
+R2 & 0.002 & 0.009 & 0.053 & 0.025 & 0.034 & 0.078 \\
+RMSE & 31.17 & 25.98 & 25.35 & 30.80 & 25.64 & 25.01 \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: The dependent variable is the dark-matter-implied current account, $CA^{DM}_{it}$, defined as the annual change in income-implied net foreign assets, divided by GDP. Output volatility is the extended H\&S-style HP-filtered volatility measure. Pooled and country fixed-effects specifications are reported. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}
