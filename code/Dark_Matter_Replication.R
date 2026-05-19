@@ -536,9 +536,10 @@ print(sample_compare)
 #
 # ==============================================================================
 
-col_blue <- "#2166AC"
-col_red  <- "#B2182B"
-col_grey <- "grey45"
+col_blue  <- "#2166AC"
+col_red   <- "#B2182B"
+col_green <- "#1B7837"
+col_grey  <- "grey45"
 
 theme_paper <- theme_bw(base_size = 11) +
   theme(
@@ -2182,18 +2183,60 @@ library(sandwich)
 
 fetch_or_load_wdi <- function(filename, indicators, start, end) {
   path <- here("code", "data", filename)
+  
   if (file.exists(path)) {
     message("  Loading from cache: ", filename)
-    read_csv(path, show_col_types = FALSE)
+    df <- read_csv(path, show_col_types = FALSE)
+    
+    if (!"iso3c" %in% names(df)) {
+      message("  Cache file is not in the expected format. Deleting and re-downloading...")
+      file.remove(path)
+      
+      df <- WDI::WDI(
+        indicator = indicators,
+        start = start,
+        end = end,
+        extra = FALSE
+      ) %>%
+        as_tibble() %>%
+        mutate(
+          iso3c = if_else(
+            !is.na(iso3c),
+            iso3c,
+            countrycode(iso2c, "iso2c", "iso3c", warn = FALSE)
+          )
+        ) %>%
+        filter(!is.na(iso3c))
+      
+      write_csv(df, path)
+      message("  Saved to: ", filename)
+    }
+    
+    return(df)
+    
   } else {
     message("  Downloading from WDI: ", paste(names(indicators), collapse = ", "))
-    df <- WDI::WDI(indicator = indicators, start = start, end = end,
-                   extra = FALSE) %>%
+    
+    df <- WDI::WDI(
+      indicator = indicators,
+      start = start,
+      end = end,
+      extra = FALSE
+    ) %>%
       as_tibble() %>%
+      mutate(
+        iso3c = if_else(
+          !is.na(iso3c),
+          iso3c,
+          countrycode(iso2c, "iso2c", "iso3c", warn = FALSE)
+        )
+      ) %>%
       filter(!is.na(iso3c))
+    
     write_csv(df, path)
     message("  Saved to: ", filename)
-    df
+    
+    return(df)
   }
 }
 
@@ -2248,6 +2291,8 @@ message(sprintf("  VIX: %d annual obs (%d–%d)",
 
 # ── Merge VIX into the extended panel ─────────────────────────────────────────
 
+safe_havens <- c("USA", "CHE", "DEU", "GBR", "JPN", "NLD", "AUT", "DNK", "NOR")
+
 panel_vix <- panel_ext %>%
   filter(year >= 1990, year <= y_ext_end) %>%
   left_join(vix_annual, by = "year") %>%
@@ -2265,13 +2310,28 @@ panel_vix <- panel_ext %>%
 
 compute_vix_beta <- function(df) {
   df <- df %>% filter(!is.na(dm_exp_flow_gdp), !is.na(d_log_vix))
-  if (nrow(df) < 12) return(NULL)
+  
+  if (nrow(df) < 12) {
+    return(tibble(
+      beta_vix = NA_real_,
+      se_vix   = NA_real_,
+      t_vix    = NA_real_,
+      n_obs    = nrow(df),
+      r2       = NA_real_
+    ))
+  }
+  
   fit <- lm(dm_exp_flow_gdp ~ d_log_vix, data = df)
-  vcv <- tryCatch(vcovHC(fit, type = "HC1"), error = function(e) vcov(fit))
+  
+  vcv <- tryCatch(
+    sandwich::vcovHC(fit, type = "HC1"),
+    error = function(e) vcov(fit)
+  )
+  
   tibble(
-    beta_vix = coef(fit)["d_log_vix"],
+    beta_vix = coef(fit)[["d_log_vix"]],
     se_vix   = sqrt(vcv["d_log_vix", "d_log_vix"]),
-    t_vix    = coef(fit)["d_log_vix"] / sqrt(vcv["d_log_vix", "d_log_vix"]),
+    t_vix    = coef(fit)[["d_log_vix"]] / sqrt(vcv["d_log_vix", "d_log_vix"]),
     n_obs    = nrow(df),
     r2       = summary(fit)$r.squared
   )
@@ -2462,17 +2522,18 @@ message("\n── Extension 1b: VIX vs. GPR Horse Race ────────�
 
 # ── Load and aggregate GPR ────────────────────────────────────────────────────
 
-gpr_annual <- read_excel(
+gpr_raw <- read_excel(
   here("code", "data", "gpr_web_latest.xlsx"),
   sheet = "GPR"
-) %>%
-  select(Date, gpr = GPR) %>%
+)
+
+gpr_annual <- gpr_raw %>%
   mutate(
-    Date = as.Date(Date),
+    Date = as.Date(as.numeric(Date), origin = "1899-12-30"),
     year = as.integer(format(Date, "%Y")),
-    gpr  = suppressWarnings(as.numeric(gpr))
+    gpr  = suppressWarnings(as.numeric(GPR))
   ) %>%
-  filter(!is.na(gpr), year >= 1990, year <= y_ext_end) %>%
+  filter(!is.na(gpr), !is.na(year), year >= 1990, year <= y_ext_end) %>%
   group_by(year) %>%
   summarise(gpr = mean(gpr, na.rm = TRUE), .groups = "drop") %>%
   arrange(year) %>%
@@ -2688,10 +2749,16 @@ intang_cs <- wdi_int %>%
 # (pharma, software, finance) is most concentrated.
 
 cs_e2 <- cs_ext %>%
-  left_join(intang_cs, by = "iso3c") %>%
-  mutate(dm_exp_ratio     = dm_exp_gdp     / 100,
-         fdi_assets_ratio = fdi_assets_gdp / 100,
-         fdi_liab_ratio   = fdi_liab_gdp   / 100)
+  select(-any_of("rnd_avg")) %>%
+  left_join(
+    intang_cs %>% select(iso3c, rnd_avg, intang_idx),
+    by = "iso3c"
+  ) %>%
+  mutate(
+    dm_exp_ratio     = dm_exp_gdp     / 100,
+    fdi_assets_ratio = fdi_assets_gdp / 100,
+    fdi_liab_ratio   = fdi_liab_gdp   / 100
+  )
 
 d_e2 <- cs_e2 %>%
   filter(iso3c %in% countries_79,
@@ -2699,6 +2766,8 @@ d_e2 <- cs_e2 %>%
          !is.na(fdi_liab_ratio), !is.na(output_vol_hp)) %>%
   mutate(across(c(dm_exp_ratio, fdi_assets_ratio, fdi_liab_ratio,
                   output_vol_hp, intang_idx, rnd_avg), winsor))
+
+
 
 t_e2 <- list(
   "(1) Baseline"   = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp,
@@ -3053,11 +3122,13 @@ decomp <- map_dfr(names(codes_e4), function(vn) {
 showcase_e4 <- c("USA","GBR","DEU","JPN","FRA","IRL")
 labels_e4   <- c(USA="United States", GBR="United Kingdom", DEU="Germany",
                  JPN="Japan",         FRA="France",         IRL="Ireland")
-comp_cols   <- c("FDI income"       = col_blue,
-                 "Portfolio equity" = col_red,
-                 "Portfolio debt"   = col_green,
-                 "Other investment" = "grey50",
-                 "Total NII"        = "black")
+comp_cols <- c(
+  "FDI income"       = col_blue,
+  "Portfolio equity" = col_red,
+  "Portfolio debt"   = col_green,
+  "Other investment" = "grey50",
+  "Total NII"        = "black"
+)
 
 fig_e4a <- decomp %>%
   filter(iso3c %in% showcase_e4, !is.na(nii_total)) %>%

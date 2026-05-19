@@ -1,0 +1,49 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{3}
+\begin{table}[htbp]
+\centering
+\caption{Extension 3 --- Financial Development and Safe Asset Production Capacity (1980--2022)}
+\label{tab:E3_findev}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llllll}
+& (1) Baseline & (2) Credit & (3) Mkt cap & (4) FinDev idx & (5) Full \\
+(Intercept) & 0.900*** & 1.177*** & 0.824*** & 1.119*** & 0.874*** \\
+& (0.214) & (0.231) & (0.223) & (0.217) & (0.217) \\
+FDI assets / GDP & -0.764*** & -0.495* & -0.585** & -0.519** & -0.181 \\
+& (0.239) & (0.251) & (0.233) & (0.243) & (0.221) \\
+FDI liabilities / GDP & 0.715*** & 0.476** & 0.556** & 0.496** & 0.171 \\
+& (0.224) & (0.233) & (0.218) & (0.226) & (0.207) \\
+Output volatility (HP) & -29.063*** & -33.490*** & -29.419*** & -33.303*** & -23.022*** \\
+& (4.922) & (5.013) & (5.539) & (4.905) & (5.424) \\
+Private credit / GDP (std.) &  & -0.333*** &  &  &  \\
+&  & (0.126) &  &  &  \\
+Stock market cap / GDP (std.) &  &  & -0.266** &  &  \\
+&  &  & (0.123) &  &  \\
+FinDev composite (std.) &  &  &  & -0.379*** & -0.145 \\
+&  &  &  & (0.131) & (0.157) \\
+Intangible intensity (std.) &  &  &  &  & -0.359* \\
+&  &  &  &  & (0.188) \\
+Rule of Law &  &  &  &  & -0.038 \\
+&  &  &  &  & (0.162) \\
+OPEC dummy &  &  &  &  & -1.670*** \\
+&  &  &  &  & (0.430) \\
+HIPC dummy &  &  &  &  & 0.591** \\
+&  &  &  &  & (0.274) \\
+Num.Obs. & 75 & 75 & 56 & 75 & 75 \\
+R2 & 0.384 & 0.440 & 0.434 & 0.450 & 0.627 \\
+R2 Adj. & 0.357 & 0.408 & 0.390 & 0.418 & 0.582 \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: Dependent variable: cumulative dark matter exports over 1980--2022, divided by end-year GDP. The FinDev composite index is the mean of z-standardised log(private credit/GDP) and log(stock market cap/GDP), averaged over the sample window. The theoretical prediction (Caballero, Farhi \& Gourinchas 2017; He, Krishnamurthy \& Milbradt 2019) is a positive coefficient: financially deeper economies produce safe assets at lower cost, attracting capital at below-equilibrium rates --- the return differential H\&S capitalise as dark matter. Column~(5) includes all three extensions jointly. All variables winsorised at the 1\% level. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}

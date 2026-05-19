@@ -1,0 +1,39 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{2}
+\begin{table}[htbp]
+\centering
+\caption{Extension 2 --- Intangible Capital Intensity and Dark Matter (1980--2022)}
+\label{tab:E2_intangibles}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llllll}
+& (1) Baseline & (2) + R\textbackslash{}\&D & (3) + Composite & (4) Horse race & (5) Industrial \\
+(Intercept) & 0.900*** & 1.557*** & 1.207*** & 1.489*** & -0.530 \\
+& (0.214) & (0.302) & (0.235) & (0.309) & (0.765) \\
+FDI assets / GDP & -0.764*** & -0.382 & -0.472* & -0.306 & -2.409** \\
+& (0.239) & (0.236) & (0.253) & (0.247) & (0.970) \\
+FDI liabilities / GDP & 0.715*** & 0.353 & 0.434* & 0.279 & 2.557** \\
+& (0.224) & (0.221) & (0.238) & (0.232) & (1.116) \\
+Output volatility (HP) & -29.063*** & -34.092*** & -34.468*** & -34.897*** & 7.646 \\
+& (4.922) & (5.823) & (5.123) & (5.872) & (24.444) \\
+R\textbackslash{}\&D / GDP &  & -0.449*** &  & -0.283 &  \\
+&  & (0.121) &  & (0.201) &  \\
+Composite intangible index &  &  & -0.480*** & -0.312 & 0.287 \\
+&  &  & (0.177) & (0.301) & (0.528) \\
+Num.Obs. & 75 & 71 & 75 & 71 & 17 \\
+R2 & 0.384 & 0.404 & 0.442 & 0.414 & 0.533 \\
+R2 Adj. & 0.357 & 0.368 & 0.410 & 0.369 & 0.378 \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: Dependent variable: cumulative dark matter exports over 1980--2022, divided by end-year GDP. The composite intangible index is the row mean of four z-standardised components: R\&D/GDP, log resident patent applications, log high-technology export share, and log ICT service exports (at least two components required per country). Following Corrado, Hulten \& Sichel (2009), R\&D captures only $\sim30\%$ of total intangible investment; the composite index recovers the remainder. Column~(4): horse race between H\&S's R\&D proxy and the composite. Column~(5): restricted to industrial countries (Keller \& Yeaple 2013). All variables winsorised at the 1\% level. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}
