@@ -1,0 +1,48 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{array}
+\usepackage{ragged2e}
+\usepackage{setspace}
+\usepackage[landscape, top=1.8cm, bottom=1.8cm, left=1.2cm, right=1.2cm]{geometry}
+\begin{document}
+\setstretch{1.1}
+\small
+\setcounter{table}{0}
+\renewcommand{\thetable}{E1}
+\begin{table}[htbp]
+\centering
+\caption{\normalsize Extension 1 --- The Safe-Asset Cycle: VIX Sensitivity of Dark Matter Exports (1990--2022)}
+\label{tab:E1_vix}
+\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llllll}
+& (1) & (2) & (3) & (4) & (5) \\
+(Intercept) & -1.4390** & -1.4249** &  &  &  \\
+& (0.6641) & (0.6619) &  &  &  \\
+\$\textbackslash{}Delta\textbackslash{}log(\textbackslash{}text\{VIX\})\$ & 4.5027* & 7.3394*** & 4.6037 & 7.4364* &  \\
+& (2.5874) & (2.7980) & (3.6254) & (3.9241) &  \\
+FDI liabilities / GDP & -0.0070 & -0.0071 & -0.0021 & -0.0022 & -0.0030 \\
+& (0.0134) & (0.0134) & (0.0091) & (0.0090) & (0.0095) \\
+FDI assets / GDP & 0.0034 & 0.0036 & -0.0002 & -0.0001 & 0.0008 \\
+& (0.0145) & (0.0144) & (0.0065) & (0.0064) & (0.0070) \\
+Country FE & No & No & Yes & Yes & Yes \\
+Year FE & No & No & No & No & Yes \\
+\$\textbackslash{}Delta\textbackslash{}log(\textbackslash{}text\{VIX\})\textbackslash{}times\textbackslash{}text\{Safe haven\}\$ &  & -29.3406*** &  & -29.5249** & -29.2679** \\
+&  & (7.6185) &  & (11.3907) & (11.5328) \\
+\$\textbackslash{}Delta\textbackslash{}log(\textbackslash{}text\{VIX\})\textbackslash{}times\textbackslash{}text\{OPEC\}\$ &  & 0.9565 &  & 1.2427 & 1.4939 \\
+&  & (12.5956) &  & (9.1032) & (9.2819) \\
+Num.Obs. & 2420 & 2420 & 2420 & 2420 & 2420 \\
+R2 & 0.003 & 0.008 & 0.055 & 0.061 & 0.095 \\
+FE: iso3c &  &  & X & X & X \\
+FE: year &  &  &  &  & X \\
+\end{tabular}%
+}
+\begin{minipage}{\linewidth}
+\vspace{4pt}
+\footnotesize\textit{Notes:} Dependent variable: annual dark matter exports ($CA^{DM}_{it} - CA^{\text{off}}_{it}$) as a share of GDP. Safe haven countries: USA, CHE, DEU, GBR, JPN, NLD, AUT, DNK, NOR (Maggiori 2017; Jiang, Krishnamurthy \& Lustig 2021). Columns (1)--(2): heteroskedasticity-robust SE. Columns (3)--(5): SE clustered by country. Column (5) includes country and year fixed effects; $\Delta\log(\text{VIX})$ is absorbed by year FE, so only the interaction terms are identified. A positive coefficient on Safe haven $\times$ $\Delta$VIX confirms H\&S's insurance mechanism is countercyclical with global risk. * $p<0.10$; ** $p<0.05$; *** $p<0.01$.
+\end{minipage}
+\end{table}
+\end{document}

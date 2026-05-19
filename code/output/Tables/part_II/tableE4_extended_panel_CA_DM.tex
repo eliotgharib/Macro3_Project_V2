@@ -1,0 +1,36 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[landscape, margin=0.7in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{4}
+\renewcommand{\thetable}{E4}
+\begin{table}[htbp]
+\centering
+\caption{Extended Table E4: Panel Determinants of the Dark-Matter-Implied CA (1980--2022)}
+\label{tab:E4_extended}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lllllll}
+& Pool -- Full & Pool -- Restr & Pool -- Ind & FE -- Full & FE -- Restr & FE -- Ind \\
+(Intercept) & -1.8000 & 1.3489 & 2.3490 &  &  &  \\
+& (1.6064) & (1.6858) & (2.3322) &  &  &  \\
+FDI liabilities (\textbackslash{}\% GDP) & -0.1623*** & -0.1332*** & -0.1252* & -0.1847* & -0.2596*** & 0.0085 \\
+& (0.0503) & (0.0449) & (0.0741) & (0.0968) & (0.0913) & (0.1314) \\
+FDI assets (\textbackslash{}\% GDP) & 0.1719*** & 0.1311*** & 0.1375** & 0.1473 & 0.2096** & 0.0438 \\
+& (0.0566) & (0.0485) & (0.0580) & (0.0971) & (0.0869) & (0.1048) \\
+Output volatility & 17.3328 & -88.4325* & -136.0774 &  &  &  \\
+& (33.6623) & (46.4714) & (90.2701) &  &  &  \\
+Num.Obs. & 1830 & 1358 & 368 & 1830 & 1358 & 368 \\
+R2 & 0.006 & 0.012 & 0.034 & 0.023 & 0.026 & 0.057 \\
+RMSE & 32.25 & 25.11 & 12.19 & 31.98 & 24.93 & 12.04 \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: Dependent variable: $CA^{DM}_{it}$ / GDP. HP-filtered output volatility computed over the full extended window. Pooled OLS and country fixed-effects specifications. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}
