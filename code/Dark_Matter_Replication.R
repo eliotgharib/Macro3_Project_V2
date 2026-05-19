@@ -1507,13 +1507,23 @@ compile_table(tex3_aug_wrapped, "table3_augmented",
 #
 # ==============================================================================
 
-# ── Extended BOP (same raw file, wider year filter) ───────────────────────────
+# ── Extended BOP — loaded from the extended file (1975-2022) ──────────────────
+#
+# Part I reads the 1975-2005 extract. Here we load the extended file separately
+# so that bop_ext genuinely covers 1975-2022 rather than being truncated at 2005.
+# Note: the 2022 file supersedes the 2005 one; both contain identical data for
+# the overlapping years, so the Part I results are unaffected.
 
-year_cols_ext <- names(bop_raw)[grepl("^\\d{4}$", names(bop_raw)) &
-                                  as.integer(names(bop_raw)) >= y_start &
-                                  as.integer(names(bop_raw)) <= y_ext_end]
+bop_raw_ext <- read_csv(
+  here("code", "data", "Current_account_primary_income_1975_2022.csv"),
+  show_col_types = FALSE
+)
 
-bop_ext <- bop_raw %>%
+year_cols_ext <- names(bop_raw_ext)[grepl("^\\d{4}$", names(bop_raw_ext)) &
+                                      as.integer(names(bop_raw_ext)) >= y_start &
+                                      as.integer(names(bop_raw_ext)) <= y_ext_end]
+
+bop_ext <- bop_raw_ext %>%
   rename(series_code = SERIES_CODE) %>%
   mutate(iso3c     = str_extract(series_code, "^[^.]+"),
          indicator = str_remove(series_code, "^[^.]+\\.")) %>%
@@ -3070,7 +3080,7 @@ message("\n── Extension 4: NII Decomposition by Asset Class ─────�
 
 # ── Extract NII sub-components from the BOP file ──────────────────────────────
 
-yr_e4 <- names(bop_raw)[grepl("^\\d{4}$", names(bop_raw)) &
+yr_e4 <- names(bop_raw_ext)[grepl("^\\d{4}$", names(bop_raw)) &
                           as.integer(names(bop_raw)) >= 1990 &
                           as.integer(names(bop_raw)) <= y_ext_end]
 
@@ -3083,7 +3093,7 @@ codes_e4 <- c(
 )
 
 decomp <- map_dfr(names(codes_e4), function(vn) {
-  bop_raw %>%
+  bop_raw_ext %>%
     rename(series_code = SERIES_CODE) %>%
     mutate(
       iso3c     = str_extract(series_code, "^[^.]+"),
