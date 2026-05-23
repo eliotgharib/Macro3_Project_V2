@@ -1,0 +1,41 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{3}
+\renewcommand{\thetable}{E3a}
+\begin{table}[htbp]
+\centering
+\caption{Extended E3a: Sources of Dark Matter, 79-Country Sample (1980--2022)}
+\label{tab:E3a_ext}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llll}
+& (i) & (ii) & (iii) \\
+(Intercept) & 0.443 & 0.705* & 0.491 \\
+& (0.330) & (0.358) & (0.352) \\
+FDI assets / GDP & -0.606* & -0.388 & -0.189 \\
+& (0.345) & (0.362) & (0.359) \\
+FDI liabilities / GDP & 0.524 & 0.332 & 0.148 \\
+& (0.322) & (0.336) & (0.333) \\
+Output volatility & -24.981*** & -30.108*** & -23.736** \\
+& (8.358) & (8.740) & (9.411) \\
+Rule of Law &  & -0.298* & -0.250 \\
+&  & (0.169) & (0.178) \\
+OPEC dummy &  &  & -1.218* \\
+&  &  & (0.632) \\
+HIPC dummy &  &  & 0.595 \\
+&  &  & (0.433) \\
+Num.Obs. & 78 & 78 & 78 \\
+R2 & 0.132 & 0.168 & 0.253 \\
+R2 Adj. & 0.097 & 0.122 & 0.190 \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: Dep. var.: cum. DM exports 1980--2022 / 2022 GDP. R\&D excluded (WDI coverage thin post-2005). Variables winsorised at 1\%. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}
