@@ -2013,6 +2013,9 @@ compile_table(wrap_ext(
 message("Section 1 done.")
 
 
+
+
+
 # ==============================================================================
 # ==============================================================================
 #
@@ -2020,6 +2023,49 @@ message("Section 1 done.")
 #
 # ==============================================================================
 # ==============================================================================
+#
+# Three discount-rate scenarios:
+#
+#   Scenario A — Universal rates (Gourinchas & Rey 2006, NBER WP 11155)
+#     r_fdi=8%, r_equity=6%, r_debt=3%, r_other=5% for all countries.
+#
+#   Scenario B — Country-group rates (Gourinchas, Rey & Govillot 2017;
+#                Lane & Milesi-Ferretti 2007)
+#     Privilege (USA, CHE, GBR): r_fdi=9%, r_eq=7%, r_debt=2%, r_other=4%
+#     Advanced (other industrial): same as Scenario A
+#     Emerging (all others):       r_fdi=6%, r_eq=5%, r_debt=5%, r_other=5%
+#
+#   Scenario C — Gross position approach: separate asset vs. liability returns
+#     (Gourinchas & Rey 2006; Curcuru, Dvorak & Warnock 2008 QJE)
+#     NFA_C = Sum_j(assets_j * r_j^asset - liabs_j * r_j^liab) / r_disc
+#     This directly captures the exorbitant-privilege wedge:
+#     privilege countries earn more on assets than they pay on liabilities.
+#     Privilege FDI wedge: +5.5pp (9.5% earned vs 4% paid).
+#     Emerging (China) FDI wedge: -1pp (6% earned vs 7% paid).
+#
+# Each scenario produces a 2x2 figure (USA, Japan, China, EU) showing:
+#   - Stacked bars: NFA by asset class (sum = implied NFA total)
+#   - Dark dashed line: implied NFA total (= top of stacked bars, explicit)
+#   - Solid grey line: official NIIP (EWN) — gap to NFA total = dark matter
+#
+# ==============================================================================
+
+# ── Additional parameters for Scenario C ──────────────────────────────────────
+# Source: Gourinchas & Rey (2006, Table 1); Curcuru, Dvorak & Warnock (2008 QJE)
+
+rates_C <- tibble(
+  group          = c("privilege",  "advanced",  "emerging"),
+  r_fdi_asset_C  = c(0.095,        0.080,        0.060),
+  r_eq_asset_C   = c(0.075,        0.060,        0.050),
+  r_debt_asset_C = c(0.045,        0.035,        0.030),
+  r_fdi_liab_C   = c(0.040,        0.060,        0.070),
+  r_eq_liab_C    = c(0.055,        0.055,        0.060),
+  r_debt_liab_C  = c(0.025,        0.030,        0.050)
+)
+
+r_disc_C      <- 0.05      # common capitalisation rate (H&S baseline)
+col_nfa_total <- "#1A1A2E" # near-black navy for the implied NFA total line
+
 
 # ==============================================================================
 # 2.1 — Extract NII sub-components + China fix
@@ -2027,14 +2073,8 @@ message("Section 1 done.")
 # China problem: the IMF BOP extract often has zero or missing FDI/equity/debt
 # income sub-components for China, causing the full NII to appear under "Other"
 # (grey bars dominate). The fix: when sub-components sum to < 30% of total NII,
-# distribute total NII proportionally using EWN net-stock weights.
-# This ensures China's chart shows informative colored bars rather than all grey.
-
-# New fix:
-# China's total NII is available, but BOP sub-components are weakly reported.
-# For China, when reported sub-components cover less than 90% of total NII,
-# we allocate total NII across FDI, equity and debt using EWN gross-position
-# weights. This changes only the asset-class decomposition, not total NII.
+# distribute total NII proportionally using EWN gross-position weights.
+# For China: stricter threshold (< 90%) because many years have partial coverage.
 # ==============================================================================
 
 codes_comp <- c(
@@ -2065,16 +2105,9 @@ nii_raw <- map_dfr(names(codes_comp), function(vn) {
 }) %>%
   pivot_wider(names_from=component, values_from=value)
 
-# Merge EWN stocks for imputation weights, then apply China fix
-#
-# China is a special case because BOP income sub-components are weakly reported.
-# We keep total NII unchanged, but improve the allocation across asset classes.
-# When sub-components are poorly covered, total NII is distributed across
-# FDI, equity and debt using EWN gross-position weights rather than net weights.
-#
-# General rule: impute if coverage < 30%.
-# China rule:   impute if coverage < 90%, because the diagnostic shows that
-#               many CHN years have partial but insufficient coverage.
+# Merge EWN stocks for imputation weights (A/B) and for Scenario C computation.
+# NOTE: gross stock columns (fdi_assets, fdi_liab, etc.) are kept in the final
+# select so that Scenario C can use them without a separate merge.
 
 nii_comp_long <- nii_raw %>%
   left_join(
@@ -2103,13 +2136,10 @@ nii_comp_long <- nii_raw %>%
       NA_real_
     ),
     
-    # Gross-position weights.
-    # These are preferred for allocation because income flows arise from gross
-    # cross-border positions rather than from net positions.
-    gross_fdi  = abs(fdi_assets)  + abs(fdi_liab),
-    gross_eq   = abs(eq_assets)   + abs(eq_liab),
-    gross_debt = abs(debt_assets) + abs(debt_liab),
-    
+    # Gross-position weights (preferred — income flows arise from gross positions)
+    gross_fdi   = abs(fdi_assets)  + abs(fdi_liab),
+    gross_eq    = abs(eq_assets)   + abs(eq_liab),
+    gross_debt  = abs(debt_assets) + abs(debt_liab),
     gross_total = gross_fdi + gross_eq + gross_debt,
     
     w_fdi_gross  = if_else(gross_total > 0, gross_fdi  / gross_total, NA_real_),
@@ -2117,10 +2147,9 @@ nii_comp_long <- nii_raw %>%
     w_debt_gross = if_else(gross_total > 0, gross_debt / gross_total, NA_real_),
     
     # Net-position fallback if gross stocks are missing
-    abs_fdi  = abs(net_fdi),
-    abs_eq   = abs(net_equity),
-    abs_debt = abs(net_debt),
-    
+    abs_fdi       = abs(net_fdi),
+    abs_eq        = abs(net_equity),
+    abs_debt      = abs(net_debt),
     net_total_abs = abs_fdi + abs_eq + abs_debt,
     
     w_fdi_net  = if_else(net_total_abs > 0, abs_fdi  / net_total_abs, NA_real_),
@@ -2132,21 +2161,15 @@ nii_comp_long <- nii_raw %>%
     w_eq   = coalesce(w_eq_gross,   w_eq_net,   1 / 3),
     w_debt = coalesce(w_debt_gross, w_debt_net, 1 / 3),
     
-    w_sum = w_fdi + w_eq + w_debt,
-    
+    w_sum  = w_fdi + w_eq + w_debt,
     w_fdi  = w_fdi  / w_sum,
     w_eq   = w_eq   / w_sum,
     w_debt = w_debt / w_sum,
     
-    # Imputation rule:
-    # - all countries: impute if coverage < 30%;
-    # - China: stricter threshold, impute if coverage < 90%.
+    # Imputation rule: all countries < 30%; China stricter at < 90%
     impute = !is.na(nii_total) &
-      (
-        is.na(coverage) |
-          coverage < 0.30 |
-          (iso3c == "CHN" & coverage < 0.90)
-      ),
+      (is.na(coverage) | coverage < 0.30 |
+         (iso3c == "CHN" & coverage < 0.90)),
     
     # Preserve original BOP components for diagnostics
     nii_fdi_raw    = nii_fdi,
@@ -2195,33 +2218,36 @@ print(
     filter(iso3c == "CHN") %>%
     summarise(
       first_year = min(year, na.rm = TRUE),
-      last_year = max(year, na.rm = TRUE),
-      n_obs = n(),
-      n_total_nii = sum(!is.na(nii_total)),
-      n_imputed = sum(impute, na.rm = TRUE),
-      mean_coverage_before = mean(coverage, na.rm = TRUE),
-      mean_coverage_after = mean(coverage_after, na.rm = TRUE),
-      mean_w_fdi = mean(w_fdi, na.rm = TRUE),
-      mean_w_eq = mean(w_eq, na.rm = TRUE),
-      mean_w_debt = mean(w_debt, na.rm = TRUE)
+      last_year  = max(year, na.rm = TRUE),
+      n_obs                = n(),
+      n_total_nii          = sum(!is.na(nii_total)),
+      n_imputed            = sum(impute, na.rm = TRUE),
+      mean_coverage_before = mean(coverage,       na.rm = TRUE),
+      mean_coverage_after  = mean(coverage_after, na.rm = TRUE),
+      mean_w_fdi           = mean(w_fdi,  na.rm = TRUE),
+      mean_w_eq            = mean(w_eq,   na.rm = TRUE),
+      mean_w_debt          = mean(w_debt, na.rm = TRUE)
     )
 )
 
 
 # ==============================================================================
-# 2.2 — Assign scenario rates and compute NFA components (both scenarios)
+# 2.2 — Assign scenario rates and compute NFA components
 # ==============================================================================
 
-# Keep only variables needed downstream, plus diagnostics useful for China.
+# Keep variables needed downstream: NII flows, net stocks, gross stocks (for C)
 nii_comp_long <- nii_comp_long %>%
   select(
     iso3c, year,
     nii_fdi, nii_equity, nii_debt, nii_other, nii_total,
     nfa_official, gdp_usd,
     net_fdi, net_equity, net_debt,
+    fdi_assets, fdi_liab, eq_assets, eq_liab, debt_assets, debt_liab,
     impute, coverage, coverage_after,
     w_fdi, w_eq, w_debt
   )
+
+# ── Scenarios A and B: capitalise NII sub-components ─────────────────────────
 
 country_rates <- nii_comp_long %>%
   distinct(iso3c) %>%
@@ -2236,7 +2262,7 @@ country_rates <- nii_comp_long %>%
 nfa_decomp <- nii_comp_long %>%
   left_join(country_rates, by = "iso3c") %>%
   mutate(
-    # ── Scenario A: component NFA in absolute and % GDP ────────────────────
+    # ── Scenario A ────────────────────────────────────────────────────────────
     nfa_fdi_A    = nii_fdi    / r_fdi_A,
     nfa_equity_A = nii_equity / r_equity_A,
     nfa_debt_A   = nii_debt   / r_debt_A,
@@ -2248,7 +2274,7 @@ nfa_decomp <- nii_comp_long %>%
     nfa_precise_A_gdp = nfa_fdi_A_gdp + nfa_equity_A_gdp +
       nfa_debt_A_gdp + nfa_other_A_gdp,
     
-    # ── Scenario B: component NFA in absolute and % GDP ────────────────────
+    # ── Scenario B ────────────────────────────────────────────────────────────
     nfa_fdi_B    = nii_fdi    / r_fdi_B,
     nfa_equity_B = nii_equity / r_equity_B,
     nfa_debt_B   = nii_debt   / r_debt_B,
@@ -2260,12 +2286,12 @@ nfa_decomp <- nii_comp_long %>%
     nfa_precise_B_gdp = nfa_fdi_B_gdp + nfa_equity_B_gdp +
       nfa_debt_B_gdp + nfa_other_B_gdp,
     
-    # ── Official NIIP and dark matter ──────────────────────────────────────
+    # ── Official NIIP and dark matter ─────────────────────────────────────────
     nfa_official_gdp = nfa_official / gdp_usd * 100,
     dm_A_gdp = nfa_precise_A_gdp - nfa_official_gdp,
     dm_B_gdp = nfa_precise_B_gdp - nfa_official_gdp,
     
-    # ── Component dark matter (= implied NFA - official stock) ─────────────
+    # ── Component dark matter (implied NFA - official stock, EWN) ─────────────
     dm_fdi_A_gdp    = (nfa_fdi_A    - net_fdi)    / gdp_usd * 100,
     dm_equity_A_gdp = (nfa_equity_A - net_equity)  / gdp_usd * 100,
     dm_debt_A_gdp   = (nfa_debt_A   - net_debt)    / gdp_usd * 100,
@@ -2276,7 +2302,7 @@ nfa_decomp <- nii_comp_long %>%
     dm_other_B_gdp  = dm_B_gdp - dm_fdi_B_gdp - dm_equity_B_gdp - dm_debt_B_gdp
   )
 
-# EU aggregate — all EU countries are "advanced" → Scenario B = A for the EU
+# EU aggregate — all EU countries are "advanced" → Scenario B = A for EU
 eu_in_data <- intersect(eu, unique(nfa_decomp$iso3c))
 
 eu_agg <- nfa_decomp %>%
@@ -2315,19 +2341,78 @@ eu_agg <- nfa_decomp %>%
     dm_debt_B_gdp   = dm_debt_A_gdp,  dm_other_B_gdp  = dm_other_A_gdp
   )
 
+# ── Scenario C: expected income from gross stocks ─────────────────────────────
+
+country_rates_C <- nii_comp_long %>%
+  distinct(iso3c) %>%
+  mutate(
+    grp            = assign_group(iso3c),
+    r_fdi_asset_C  = rates_C$r_fdi_asset_C[match(grp,  rates_C$group)],
+    r_eq_asset_C   = rates_C$r_eq_asset_C[match(grp,   rates_C$group)],
+    r_debt_asset_C = rates_C$r_debt_asset_C[match(grp, rates_C$group)],
+    r_fdi_liab_C   = rates_C$r_fdi_liab_C[match(grp,  rates_C$group)],
+    r_eq_liab_C    = rates_C$r_eq_liab_C[match(grp,   rates_C$group)],
+    r_debt_liab_C  = rates_C$r_debt_liab_C[match(grp, rates_C$group)]
+  )
+
+nfa_decomp_C <- nii_comp_long %>%
+  left_join(country_rates_C, by = "iso3c") %>%
+  filter(!is.na(gdp_usd)) %>%
+  mutate(
+    # Expected net income by component = assets * r^asset - liabilities * r^liab
+    exp_nii_fdi    = coalesce(fdi_assets,0)  * r_fdi_asset_C  -
+      coalesce(fdi_liab,0)    * r_fdi_liab_C,
+    exp_nii_equity = coalesce(eq_assets,0)   * r_eq_asset_C   -
+      coalesce(eq_liab,0)     * r_eq_liab_C,
+    exp_nii_debt   = coalesce(debt_assets,0) * r_debt_asset_C -
+      coalesce(debt_liab,0)   * r_debt_liab_C,
+    # Capitalise at common discount rate r_disc_C = 5%
+    nfa_fdi_C_gdp    = (exp_nii_fdi    / r_disc_C) / gdp_usd * 100,
+    nfa_equity_C_gdp = (exp_nii_equity / r_disc_C) / gdp_usd * 100,
+    nfa_debt_C_gdp   = (exp_nii_debt   / r_disc_C) / gdp_usd * 100,
+    nfa_precise_C_gdp = nfa_fdi_C_gdp + nfa_equity_C_gdp + nfa_debt_C_gdp,
+    nfa_official_gdp  = nfa_official / gdp_usd * 100,
+    dm_C_gdp = nfa_precise_C_gdp - nfa_official_gdp
+  )
+
+# EU aggregate for Scenario C (all EU = advanced → rates identical to advanced)
+eu_agg_C <- nfa_decomp_C %>%
+  filter(iso3c %in% eu_in_data, !is.na(gdp_usd)) %>%
+  group_by(year) %>%
+  summarise(
+    across(c(fdi_assets, fdi_liab, eq_assets, eq_liab, debt_assets, debt_liab,
+             nfa_official, gdp_usd), sum, na.rm = TRUE),
+    r_fdi_asset_C  = first(r_fdi_asset_C),
+    r_eq_asset_C   = first(r_eq_asset_C),
+    r_debt_asset_C = first(r_debt_asset_C),
+    r_fdi_liab_C   = first(r_fdi_liab_C),
+    r_eq_liab_C    = first(r_eq_liab_C),
+    r_debt_liab_C  = first(r_debt_liab_C),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    iso3c = "EU",
+    exp_nii_fdi    = fdi_assets  * r_fdi_asset_C  - fdi_liab  * r_fdi_liab_C,
+    exp_nii_equity = eq_assets   * r_eq_asset_C   - eq_liab   * r_eq_liab_C,
+    exp_nii_debt   = debt_assets * r_debt_asset_C - debt_liab * r_debt_liab_C,
+    nfa_fdi_C_gdp    = (exp_nii_fdi    / r_disc_C) / gdp_usd * 100,
+    nfa_equity_C_gdp = (exp_nii_equity / r_disc_C) / gdp_usd * 100,
+    nfa_debt_C_gdp   = (exp_nii_debt   / r_disc_C) / gdp_usd * 100,
+    nfa_precise_C_gdp = nfa_fdi_C_gdp + nfa_equity_C_gdp + nfa_debt_C_gdp,
+    nfa_official_gdp  = nfa_official / gdp_usd * 100,
+    dm_C_gdp = nfa_precise_C_gdp - nfa_official_gdp
+  )
+
 
 # ==============================================================================
-# 2.3 — TWO 2×2 panels: one per scenario
+# 2.3 — TWO 2x2 panels (Scenarios A and B) + one additional panel (Scenario C)
 #
-# Design choices:
-#   - Stacked bars (width≈1, 3-year smoothed): NFA by component = stacked total
-#   - Bold dark grey line: official NIIP (more visible than before)
-#   - NO H&S 5% line (removed per instruction)
-#   - Gap between stacked top and NIIP = dark matter
-#   - Common legend collected at the bottom via patchwork
-#   - Two separate figures: Scenario A (fig_II_05) and Scenario B (fig_II_06)
-#     Japan and EU look identical in both (advanced = same rates)
-#     USA and China differ (privilege / emerging)
+# Design for Scenarios A and B:
+#   - Stacked bars (3-year smoothed): NFA by component = sum is NFA total
+#   - Dark dashed line: implied NFA total (= top of stacked bars, made explicit)
+#   - Solid grey line: official NIIP (EWN) — gap to NFA total = dark matter
+#   - No H&S 5% line
+#   - Common legend via patchwork
 # ==============================================================================
 
 make_one_panel <- function(iso_sel, panel_label, scenario = "A") {
@@ -2336,13 +2421,13 @@ make_one_panel <- function(iso_sel, panel_label, scenario = "A") {
     arrange(year)
   if (nrow(df) == 0) return(NULL)
   
-  # Select columns for the chosen scenario and apply 3-year smoothing
   if (scenario == "A") {
     df <- df %>% mutate(
       c_fdi   = rollmean3(nfa_fdi_A_gdp),
       c_eq    = rollmean3(nfa_equity_A_gdp),
       c_debt  = rollmean3(nfa_debt_A_gdp),
       c_other = rollmean3(nfa_other_A_gdp),
+      nfa_tot = rollmean3(nfa_precise_A_gdp),
       niip_sm = rollmean3(nfa_official_gdp)
     )
   } else {
@@ -2351,6 +2436,7 @@ make_one_panel <- function(iso_sel, panel_label, scenario = "A") {
       c_eq    = rollmean3(nfa_equity_B_gdp),
       c_debt  = rollmean3(nfa_debt_B_gdp),
       c_other = rollmean3(nfa_other_B_gdp),
+      nfa_tot = rollmean3(nfa_precise_B_gdp),
       niip_sm = rollmean3(nfa_official_gdp)
     )
   }
@@ -2360,25 +2446,37 @@ make_one_panel <- function(iso_sel, panel_label, scenario = "A") {
     pivot_longer(-year, names_to = "comp", values_to = "pct") %>%
     mutate(comp = factor(comp, levels = c("Other","Debt","Equity","FDI")))
   
-  refs <- df %>% select(year, niip = niip_sm)
+  refs <- df %>% select(year, niip = niip_sm, nfa_total = nfa_tot)
   
   ggplot() +
     geom_hline(yintercept = 0, colour = "grey65", linewidth = 0.35) +
     # Stacked bars: NFA by component
     geom_col(data = comp_df, aes(x = year, y = pct, fill = comp),
              position = "stack", width = 0.95, alpha = 0.75) +
-    # Official NIIP: bold and clearly visible to show DM gap
+    # Implied NFA total — dark dashed (= top of stacked bars, makes gap explicit)
+    geom_line(data = refs,
+              aes(x = year, y = nfa_total,
+                  colour = "Implied NFA total",
+                  linetype = "Implied NFA total"),
+              linewidth = 1.2) +
+    # Official NIIP — bold solid grey (gap to NFA total = dark matter)
     geom_line(data = refs,
               aes(x = year, y = niip,
-                  colour = "NIIP officielle (EWN)",
-                  linetype = "NIIP officielle (EWN)"),
+                  colour = "Official NIIP (EWN)",
+                  linetype = "Official NIIP (EWN)"),
               linewidth = 1.5) +
-    scale_fill_manual(values = comp_palette, name = "Composante NFA") +
-    scale_colour_manual(values = c("NIIP officielle (EWN)" = "grey12"), name = NULL) +
-    scale_linetype_manual(values = c("NIIP officielle (EWN)" = "solid"),  name = NULL) +
+    scale_fill_manual(values = comp_palette, name = "NFA component") +
+    scale_colour_manual(
+      values = c("Implied NFA total"   = col_nfa_total,
+                 "Official NIIP (EWN)" = "grey12"),
+      name = NULL) +
+    scale_linetype_manual(
+      values = c("Implied NFA total"   = "dashed",
+                 "Official NIIP (EWN)" = "solid"),
+      name = NULL) +
     scale_x_continuous(breaks = seq(1993, y_ext_end, 6)) +
     scale_y_continuous(labels = label_number(suffix = "%")) +
-    labs(title = panel_label, x = NULL, y = "% du PIB") +
+    labs(title = panel_label, x = NULL, y = "% of GDP") +
     theme_paper +
     theme(plot.title      = element_text(size = 10.5, face = "bold"),
           axis.text.x     = element_text(size = 7.5),
@@ -2390,41 +2488,47 @@ make_one_panel <- function(iso_sel, panel_label, scenario = "A") {
 }
 
 make_2x2_nfa <- function(scenario = "A") {
-  p_usa <- make_one_panel("USA", "États-Unis",       scenario)
-  p_jpn <- make_one_panel("JPN", "Japon",            scenario)
-  p_chn <- make_one_panel("CHN", "Chine",            scenario)
-  p_eu  <- make_one_panel("EU",  "Union européenne", scenario)
+  p_usa <- make_one_panel("USA", "United States",      scenario)
+  p_jpn <- make_one_panel("JPN", "Japan",              scenario)
+  p_chn <- make_one_panel("CHN", "China",              scenario)
+  p_eu  <- make_one_panel("EU",  "European Union",     scenario)
   
   sub_title <- if (scenario == "A") {
     paste0(
-      "Scénario A — taux universels G&R (2006): ",
-      "FDI = 8%, actions = 6%, dette = 3%, autres = 5%."
+      "Scenario A: universal G&R (2006) rates",
+      " (r_FDI=8%, r_equity=6%, r_debt=3%, r_other=5%).",
+      " Stacked bars: NFA by asset class (NII_j / r_j).",
+      " Dark dashed: implied NFA total. Solid grey: official NIIP (EWN). Gap = dark matter.",
+      " China sub-components imputed from EWN gross-stock weights when BOP coverage < 90%.",
+      " % of GDP, 1993-", y_ext_end, "."
     )
   } else {
     paste0(
-      "Scénario B — taux différenciés: ",
-      "privilège USA/CHE/GBR, FDI = 9%, dette = 2%; ",
-      "avancés = baseline; émergents, FDI = 6%, dette = 5%."
+      "Scenario B: country-group rates (Gourinchas, Rey & Govillot 2017).",
+      " Privilege (USA, CHE, GBR): r_FDI=9%, r_equity=7%, r_debt=2%.",
+      " Advanced (other industrial): same as Scenario A.",
+      " Emerging (China etc.): r_FDI=6%, r_equity=5%, r_debt=5%.",
+      " Japan and EU unchanged (advanced group).",
+      " Dark dashed: implied NFA total. Solid grey: official NIIP. Gap = dark matter.",
+      " % of GDP, 1993-", y_ext_end, "."
     )
   }
   
   (p_usa | p_jpn) / (p_chn | p_eu) +
     plot_layout(guides = "collect") +
     plot_annotation(
-      title    = "NFA par classe d'actif — USA, Japon, Chine, Union européenne",
-      subtitle = paste0(
-        sub_title,
-        "Aires = composantes NFA capitalisées par classe d'actif. ",
-        "Ligne grise = NIIP officielle (EWN). Écart = dark matter. ",
-        "% du PIB, 1993\u2013", y_ext_end, "."),
+      title    = paste0("Implied NFA by Asset Class - ",
+                        if (scenario == "A") "Scenario A" else "Scenario B",
+                        ": USA, Japan, China, European Union"),
+      subtitle = sub_title,
       theme = theme(
-        plot.title    = element_text(size = 12, face = "bold"),
-        plot.subtitle = element_text(size = 8.5, colour = "grey35"),
+        plot.title      = element_text(size = 12, face = "bold"),
+        plot.subtitle   = element_text(size = 8.5, colour = "grey35"),
         legend.position = "bottom")
     ) & theme(legend.position = "bottom")
 }
 
-# Produce and save — two panels, no individual country saves
+# Produce and save Scenarios A and B (no individual country saves)
 fig_II_05 <- make_2x2_nfa("A")
 save_fig(fig_II_05, "fig_II_05_nfa_decomp_scen_A", part = "part_II", w = 14, h = 11)
 
@@ -2432,12 +2536,113 @@ fig_II_06 <- make_2x2_nfa("B")
 save_fig(fig_II_06, "fig_II_06_nfa_decomp_scen_B", part = "part_II", w = 14, h = 11)
 
 
+# ── Scenario C panel: gross-position approach ─────────────────────────────────
+#
+# Bars = (assets_j * r_j^asset - liabilities_j * r_j^liab) / r_disc.
+# Positive bar: country earns more on assets than it pays on liabilities
+# in that class (privilege wedge). Negative bar: reverse (e.g. China on FDI).
+# Only three components (FDI, Equity, Debt) — no EWN residual "Other".
+
+make_one_panel_C <- function(iso_sel, panel_label) {
+  df <- bind_rows(nfa_decomp_C %>% filter(iso3c == iso_sel), eu_agg_C) %>%
+    filter(iso3c == iso_sel, year >= 1993) %>%
+    arrange(year) %>%
+    mutate(
+      c_fdi   = rollmean3(nfa_fdi_C_gdp),
+      c_eq    = rollmean3(nfa_equity_C_gdp),
+      c_debt  = rollmean3(nfa_debt_C_gdp),
+      nfa_tot = rollmean3(nfa_precise_C_gdp),
+      niip_sm = rollmean3(nfa_official_gdp)
+    )
+  if (nrow(df) == 0) return(NULL)
+  
+  comp_df <- df %>%
+    select(year, FDI = c_fdi, Equity = c_eq, Debt = c_debt) %>%
+    pivot_longer(-year, names_to = "comp", values_to = "pct") %>%
+    mutate(comp = factor(comp, levels = c("Debt","Equity","FDI")))
+  
+  refs <- df %>% select(year, niip = niip_sm, nfa_total = nfa_tot)
+  
+  ggplot() +
+    geom_hline(yintercept = 0, colour = "grey65", linewidth = 0.35) +
+    geom_col(data = comp_df, aes(x = year, y = pct, fill = comp),
+             position = "stack", width = 0.95, alpha = 0.75) +
+    geom_line(data = refs,
+              aes(x = year, y = nfa_total,
+                  colour = "Implied NFA total",
+                  linetype = "Implied NFA total"),
+              linewidth = 1.2) +
+    geom_line(data = refs,
+              aes(x = year, y = niip,
+                  colour = "Official NIIP (EWN)",
+                  linetype = "Official NIIP (EWN)"),
+              linewidth = 1.5) +
+    scale_fill_manual(values = comp_palette[c("FDI","Equity","Debt")],
+                      name = "NFA component") +
+    scale_colour_manual(
+      values = c("Implied NFA total"   = col_nfa_total,
+                 "Official NIIP (EWN)" = "grey12"),
+      name = NULL) +
+    scale_linetype_manual(
+      values = c("Implied NFA total"   = "dashed",
+                 "Official NIIP (EWN)" = "solid"),
+      name = NULL) +
+    scale_x_continuous(breaks = seq(1993, y_ext_end, 6)) +
+    scale_y_continuous(labels = label_number(suffix = "%")) +
+    labs(title = panel_label, x = NULL, y = "% of GDP") +
+    theme_paper +
+    theme(plot.title      = element_text(size = 10.5, face = "bold"),
+          axis.text.x     = element_text(size = 7.5),
+          axis.text.y     = element_text(size = 8),
+          axis.title.y    = element_text(size = 8.5),
+          legend.position = "bottom",
+          legend.text     = element_text(size = 8),
+          plot.margin     = margin(5, 8, 5, 5))
+}
+
+fig_II_07 <- (make_one_panel_C("USA","United States") |
+                make_one_panel_C("JPN","Japan")) /
+  (make_one_panel_C("CHN","China") |
+     make_one_panel_C("EU", "European Union")) +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+    title    = "Implied NFA by Asset Class - Scenario C: Gross Position Approach",
+    subtitle = paste0(
+      "Scenario C: separate return rates for assets and liabilities (Gourinchas & Rey 2006;",
+      " Curcuru, Dvorak & Warnock 2008 QJE).",
+      " Bars: (assets_j x r_j^asset - liabilities_j x r_j^liab) / 0.05.",
+      " Privilege (USA, CHE, GBR): r_FDI^asset=9.5%, r_FDI^liab=4% (wedge = +5.5pp).",
+      " Emerging (China): r_FDI^asset=6%, r_FDI^liab=7% (negative wedge = -1pp).",
+      " Dark dashed: implied NFA total. Solid grey: official NIIP. Gap = dark matter.",
+      " % of GDP, 1993-", y_ext_end, "."),
+    theme = theme(
+      plot.title      = element_text(size = 12, face = "bold"),
+      plot.subtitle   = element_text(size = 8.5, colour = "grey35"),
+      legend.position = "bottom")
+  ) & theme(legend.position = "bottom")
+
+save_fig(fig_II_07, "fig_II_07_nfa_decomp_scen_C", part = "part_II", w = 14, h = 11)
+
+
 # ==============================================================================
-# 2.4 — Robustness table: NIIP vs NFA_A vs NFA_B
+# 2.4 — Robustness table: NIIP vs NFA_A vs NFA_B vs NFA_C
 # ==============================================================================
 
-tdir       <- here("code","output","tables","part_II")
+tdir        <- here("code","output","tables","part_II")
 summ_window <- (y_ext_end - 9):y_ext_end
+
+# Scenario C averages for showcase countries and EU
+dm_C_avg <- bind_rows(
+  nfa_decomp_C %>% filter(iso3c %in% showcase),
+  eu_agg_C
+) %>%
+  filter(year %in% summ_window) %>%
+  group_by(iso3c) %>%
+  summarise(
+    nfa_C = round(mean(nfa_precise_C_gdp, na.rm=TRUE), 1),
+    dm_C  = round(mean(dm_C_gdp,          na.rm=TRUE), 1),
+    .groups = "drop"
+  )
 
 summ_raw <- bind_rows(
   nfa_decomp %>% filter(iso3c %in% showcase), eu_agg
@@ -2454,34 +2659,41 @@ summ_raw <- bind_rows(
     dm_B    = round(mean(dm_B_gdp,          na.rm=TRUE), 1),
     diff_BA = round(mean(dm_B_gdp - dm_A_gdp, na.rm=TRUE), 1),
     .groups = "drop"
-  )
+  ) %>%
+  left_join(dm_C_avg, by = "iso3c")
 
 tex_summ <- kableExtra::kbl(
-  summ_raw %>% select(label, grp, niip, nfa_A, nfa_B, dm_A, dm_B, diff_BA),
+  summ_raw %>% select(label, grp, niip, nfa_A, nfa_B, nfa_C, dm_A, dm_B, dm_C),
   format = "latex", booktabs = TRUE, linesep = "",
-  col.names = c("Entité","Groupe","NIIP","NFA$_A$","NFA$_B$","DM$_A$","DM$_B$","B$-$A"),
-  caption = paste0("NFA et dark matter sous deux scénarios, moy. ",
-                   min(summ_window),"--",max(summ_window)," (\\% du PIB)"),
+  col.names = c("Entity","Group","NIIP","NFA$_A$","NFA$_B$","NFA$_C$",
+                "DM$_A$","DM$_B$","DM$_C$"),
+  caption = paste0("Implied NFA and dark matter under three scenarios, avg. ",
+                   min(summ_window),"--",max(summ_window)," (\\% of GDP)"),
   label = "tab:summ_scen", escape = FALSE,
-  align = c("l","l","r","r","r","r","r","r")
+  align = c("l","l","r","r","r","r","r","r","r")
 ) %>%
   kableExtra::kable_styling(latex_options="hold_position", font_size=10.5) %>%
-  kableExtra::add_header_above(c(" "=2,"Mesures NFA"=3,"Dark matter"=3),
-                               bold=TRUE, line=TRUE, escape=FALSE) %>%
+  kableExtra::add_header_above(
+    c(" "=2,"Implied NFA measures"=4,"Dark matter"=3),
+    bold=TRUE, line=TRUE, escape=FALSE) %>%
   kableExtra::footnote(
     general = paste0(
-      "Scén. A: taux G\\\\&R (2006) universels. ",
-      "Scén. B: GRG (2017). ",
-      "Privilège (USA, CHE, GBR): r$_{\\\\text{FDI}}$=9\\\\%, r$_{\\\\text{dette}}$=2\\\\%. ",
-      "Émergents (CHN): r$_{\\\\text{FDI}}$=6\\\\%, r$_{\\\\text{dette}}$=5\\\\%. ",
-      "Un taux plus élevé réduit le stock capitalisé pour le même flux de revenu. ",
-      "UE: pays avancés → Scén. B = Scén. A."),
-    general_title = "\\\\textit{Notes:} ", escape = FALSE)
+      "Scenario A: universal G\\\\&R (2006) rates. ",
+      "Scenario B: GRG (2017). ",
+      "Privilege (USA, CHE, GBR): r$_{\\\\text{FDI}}$=9\\\\%, r$_{\\\\text{debt}}$=2\\\\%. ",
+      "Emerging (CHN): r$_{\\\\text{FDI}}$=6\\\\%, r$_{\\\\text{debt}}$=5\\\\%. ",
+      "Scenario C: gross-position approach (Gourinchas \\\\& Rey 2006; ",
+      "Curcuru, Dvorak \\\\& Warnock 2008). ",
+      "Privilege FDI wedge: +5.5pp (earn 9.5\\\\%, pay 4\\\\%). ",
+      "China FDI wedge: $-$1pp (earn 6\\\\%, pay 7\\\\%). ",
+      "DM = implied NFA minus official NIIP (EWN). ",
+      "EU: advanced group, Scenarios A, B and C use same rates."),
+    general_title="\\\\textit{Notes:} ", escape=FALSE)
 
 writeLines(paste0(
   "\\documentclass[11pt]{article}\n",
   "\\usepackage{booktabs,xcolor,colortbl,caption,array,graphicx,amsmath}\n",
-  "\\usepackage[margin=1.5cm]{geometry}\n",
+  "\\usepackage[landscape,margin=1.2cm]{geometry}\n",
   "\\begin{document}\\small\\setcounter{table}{6}\n",
   tex_summ, "\n\\end{document}"),
   file.path(tdir, "tab_II_T07_scenarios_comparison.tex"))
@@ -2565,7 +2777,7 @@ fig_II_S2_us_china_dm <- ggplot(
     subtitle = paste0(
       "Dark matter = income-implied NFA minus official NIIP. ",
       "Scenario A uses universal asset-class rates; Scenario B uses group-specific rates. ",
-      "Percent of GDP, 1993–", y_ext_end, "."
+      "Percent of GDP, 1993-", y_ext_end, "."
     ),
     x = NULL,
     y = "Dark matter stock (% of GDP)"
@@ -2586,10 +2798,6 @@ save_fig(
 
 
 # ── 2. Gross external portfolio structure: US vs China ────────────────────────
-#
-# This figure addresses the point that the explanation should come from the
-# evolving structure of the external portfolio. It shows whether the US and China
-# hold / issue different types of assets over time.
 
 required_ewn_cols <- c(
   "iso3c", "year", "gdp_usd",
@@ -2616,13 +2824,13 @@ us_china_gross_portfolio <- EWN_ext %>%
       "CHN" = "China"
     ),
     
-    fdi_assets_gdp   = fdi_assets  / gdp_usd * 100,
-    equity_assets_gdp = eq_assets  / gdp_usd * 100,
-    debt_assets_gdp  = debt_assets / gdp_usd * 100,
+    fdi_assets_gdp    = fdi_assets  / gdp_usd * 100,
+    equity_assets_gdp = eq_assets   / gdp_usd * 100,
+    debt_assets_gdp   = debt_assets / gdp_usd * 100,
     
-    fdi_liab_gdp     = fdi_liab  / gdp_usd * 100,
-    equity_liab_gdp  = eq_liab   / gdp_usd * 100,
-    debt_liab_gdp    = debt_liab / gdp_usd * 100
+    fdi_liab_gdp      = fdi_liab  / gdp_usd * 100,
+    equity_liab_gdp   = eq_liab   / gdp_usd * 100,
+    debt_liab_gdp     = debt_liab / gdp_usd * 100
   ) %>%
   select(
     country, year,
@@ -2665,7 +2873,7 @@ fig_II_S2_us_china_portfolio <- ggplot(
     title = "US vs China — Gross External Portfolio Structure",
     subtitle = paste0(
       "Gross external assets and liabilities by asset class. ",
-      "Percent of GDP, 1993–", y_ext_end, "."
+      "Percent of GDP, 1993-", y_ext_end, "."
     ),
     x = NULL,
     y = "% of GDP"
@@ -2685,6 +2893,9 @@ save_fig(
 )
 
 message("  US-China additional figures done.")
+
+
+
 
 # ==============================================================================
 # ==============================================================================
