@@ -2492,6 +2492,199 @@ setwd(old)
 
 message("Section 2 done.")
 
+# ==============================================================================
+#
+# Part II — Section 2 additional figure
+# US vs China: dark matter stock and portfolio structure
+#
+# This block responds to the supervisor's suggestion to explicitly compare
+# the United States and China. The US is the canonical dark-matter exporter:
+# its official NIIP deteriorates, but its income-implied position remains strong.
+# China is the mirror case: official NIIP improves, but income generation is weak.
+#
+# ==============================================================================
+
+message("\n── Part II / Additional Figure: US vs China dark matter ────────────────")
+
+# ── 1. Build US-China dark matter stock series ────────────────────────────────
+
+us_china_dm <- nfa_decomp %>%
+  filter(iso3c %in% c("USA", "CHN"), year >= 1993, year <= y_ext_end) %>%
+  mutate(
+    country = recode(
+      iso3c,
+      "USA" = "United States",
+      "CHN" = "China"
+    )
+  ) %>%
+  select(
+    iso3c, country, year,
+    dm_A_gdp, dm_B_gdp,
+    nfa_official_gdp,
+    nfa_precise_A_gdp,
+    nfa_precise_B_gdp
+  ) %>%
+  pivot_longer(
+    c(dm_A_gdp, dm_B_gdp),
+    names_to = "measure",
+    values_to = "dm_gdp"
+  ) %>%
+  mutate(
+    measure = recode(
+      measure,
+      "dm_A_gdp" = "Scenario A",
+      "dm_B_gdp" = "Scenario B"
+    )
+  )
+
+fig_II_S2_us_china_dm <- ggplot(
+  us_china_dm,
+  aes(x = year, y = dm_gdp, colour = measure, linetype = measure)
+) +
+  geom_hline(yintercept = 0, colour = col_grey, linewidth = 0.4) +
+  geom_line(linewidth = 1.1, alpha = 0.95) +
+  facet_wrap(~ country, scales = "free_y", ncol = 1) +
+  scale_colour_manual(
+    values = c(
+      "Scenario A" = col_blue,
+      "Scenario B" = col_red
+    ),
+    name = NULL
+  ) +
+  scale_linetype_manual(
+    values = c(
+      "Scenario A" = "solid",
+      "Scenario B" = "dashed"
+    ),
+    name = NULL
+  ) +
+  scale_x_continuous(breaks = seq(1993, y_ext_end, 5)) +
+  scale_y_continuous(labels = label_number(suffix = "%")) +
+  labs(
+    title = "US vs China — Dark Matter Stock under Component-Specific Methods",
+    subtitle = paste0(
+      "Dark matter = income-implied NFA minus official NIIP. ",
+      "Scenario A uses universal asset-class rates; Scenario B uses group-specific rates. ",
+      "Percent of GDP, 1993–", y_ext_end, "."
+    ),
+    x = NULL,
+    y = "Dark matter stock (% of GDP)"
+  ) +
+  theme_paper +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold")
+  )
+
+save_fig(
+  fig_II_S2_us_china_dm,
+  "fig_II_S2_us_china_dark_matter_stock",
+  part = "part_II",
+  w = 9,
+  h = 7
+)
+
+
+# ── 2. Gross external portfolio structure: US vs China ────────────────────────
+#
+# This figure addresses the point that the explanation should come from the
+# evolving structure of the external portfolio. It shows whether the US and China
+# hold / issue different types of assets over time.
+
+required_ewn_cols <- c(
+  "iso3c", "year", "gdp_usd",
+  "fdi_assets", "fdi_liab",
+  "eq_assets", "eq_liab",
+  "debt_assets", "debt_liab"
+)
+
+missing_ewn_cols <- setdiff(required_ewn_cols, names(EWN_ext))
+
+if (length(missing_ewn_cols) > 0) {
+  stop(
+    "EWN_ext is missing required columns for the US-China portfolio figure: ",
+    paste(missing_ewn_cols, collapse = ", ")
+  )
+}
+
+us_china_gross_portfolio <- EWN_ext %>%
+  filter(iso3c %in% c("USA", "CHN"), year >= 1993, year <= y_ext_end) %>%
+  mutate(
+    country = recode(
+      iso3c,
+      "USA" = "United States",
+      "CHN" = "China"
+    ),
+    
+    fdi_assets_gdp   = fdi_assets  / gdp_usd * 100,
+    equity_assets_gdp = eq_assets  / gdp_usd * 100,
+    debt_assets_gdp  = debt_assets / gdp_usd * 100,
+    
+    fdi_liab_gdp     = fdi_liab  / gdp_usd * 100,
+    equity_liab_gdp  = eq_liab   / gdp_usd * 100,
+    debt_liab_gdp    = debt_liab / gdp_usd * 100
+  ) %>%
+  select(
+    country, year,
+    fdi_assets_gdp, equity_assets_gdp, debt_assets_gdp,
+    fdi_liab_gdp, equity_liab_gdp, debt_liab_gdp
+  ) %>%
+  pivot_longer(
+    -c(country, year),
+    names_to = "component",
+    values_to = "value"
+  ) %>%
+  mutate(
+    side = if_else(str_detect(component, "_assets_"), "External assets", "External liabilities"),
+    asset_class = case_when(
+      str_detect(component, "fdi")    ~ "FDI",
+      str_detect(component, "equity") ~ "Portfolio equity",
+      str_detect(component, "debt")   ~ "Debt",
+      TRUE                            ~ "Other"
+    ),
+    asset_class = factor(asset_class, levels = c("FDI", "Portfolio equity", "Debt"))
+  )
+
+fig_II_S2_us_china_portfolio <- ggplot(
+  us_china_gross_portfolio,
+  aes(x = year, y = value, fill = asset_class)
+) +
+  geom_col(width = 0.85, alpha = 0.85) +
+  facet_grid(country ~ side, scales = "free_y") +
+  scale_fill_manual(
+    values = c(
+      "FDI" = col_blue,
+      "Portfolio equity" = col_red,
+      "Debt" = col_green
+    ),
+    name = NULL
+  ) +
+  scale_x_continuous(breaks = seq(1993, y_ext_end, 6)) +
+  scale_y_continuous(labels = label_number(suffix = "%")) +
+  labs(
+    title = "US vs China — Gross External Portfolio Structure",
+    subtitle = paste0(
+      "Gross external assets and liabilities by asset class. ",
+      "Percent of GDP, 1993–", y_ext_end, "."
+    ),
+    x = NULL,
+    y = "% of GDP"
+  ) +
+  theme_paper +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold")
+  )
+
+save_fig(
+  fig_II_S2_us_china_portfolio,
+  "fig_II_S2_us_china_gross_portfolio_structure",
+  part = "part_II",
+  w = 12,
+  h = 7.5
+)
+
+message("  US-China additional figures done.")
 
 # ==============================================================================
 # ==============================================================================
@@ -2900,7 +3093,230 @@ message("Tables  : code/output/tables/part_II/")
 #   tab_II_T08_channels_regression
 # ==============================================================================
 
+# ==============================================================================
+# ==============================================================================
+#
+#   SECTION 4 — Gross Portfolio Components and Dark Matter
+#
+# ==============================================================================
+# ==============================================================================
+#
+# Motivation:
+# The supervisor suggested that we should not only regress net dark matter on
+# aggregate variables. We should also look at gross portfolio components:
+# FDI assets/liabilities, equity assets/liabilities, and debt assets/liabilities.
+#
+# This tests whether dark matter is driven by:
+#   - the quantity of risky foreign assets held abroad;
+#   - the quantity of safe liabilities issued to foreigners;
+#   - the asset-class composition of the external balance sheet.
+#
+# ==============================================================================
 
+message("\n── Part II / Section 4: Gross portfolio components ─────────────────────")
+
+# Safe-haven group used in Part II gross-component regressions
+if (!exists("safe_havens")) {
+  safe_havens <- c("USA", "CHE", "DEU", "GBR", "JPN", "NLD", "AUT", "DNK", "NOR")
+}
+
+required_gross_cols <- c(
+  "iso3c", "year", "gdp_usd",
+  "fdi_assets", "fdi_liab",
+  "eq_assets", "eq_liab",
+  "debt_assets", "debt_liab"
+)
+
+missing_gross_cols <- setdiff(required_gross_cols, names(EWN_ext))
+
+if (length(missing_gross_cols) > 0) {
+  stop(
+    "EWN_ext is missing required columns for gross-component regressions: ",
+    paste(missing_gross_cols, collapse = ", ")
+  )
+}
+
+# ── Build annual gross-component panel ────────────────────────────────────────
+
+gross_components_panel <- EWN_ext %>%
+  filter(year >= 1993, year <= y_ext_end) %>%
+  transmute(
+    iso3c, year, gdp_usd,
+    
+    fdi_assets_gdp_gross    = fdi_assets  / gdp_usd * 100,
+    fdi_liab_gdp_gross      = fdi_liab    / gdp_usd * 100,
+    
+    equity_assets_gdp_gross = eq_assets   / gdp_usd * 100,
+    equity_liab_gdp_gross   = eq_liab     / gdp_usd * 100,
+    
+    debt_assets_gdp_gross   = debt_assets / gdp_usd * 100,
+    debt_liab_gdp_gross     = debt_liab   / gdp_usd * 100,
+    
+    total_gross_assets_gdp = (
+      coalesce(fdi_assets, 0) +
+        coalesce(eq_assets, 0) +
+        coalesce(debt_assets, 0)
+    ) / gdp_usd * 100,
+    
+    total_gross_liab_gdp = (
+      coalesce(fdi_liab, 0) +
+        coalesce(eq_liab, 0) +
+        coalesce(debt_liab, 0)
+    ) / gdp_usd * 100
+  ) %>%
+  mutate(
+    gross_balance_sheet_gdp = total_gross_assets_gdp + total_gross_liab_gdp,
+    debt_liab_share = debt_liab_gdp_gross / total_gross_liab_gdp,
+    equity_liab_share = equity_liab_gdp_gross / total_gross_liab_gdp,
+    fdi_liab_share = fdi_liab_gdp_gross / total_gross_liab_gdp
+  )
+
+# ── Merge with H&S dark matter flows and component-specific dark matter ───────
+
+gross_dm_panel <- panel_ext %>%
+  filter(year >= 1993, year <= y_ext_end) %>%
+  select(
+    iso3c, year,
+    dm_exp_flow_gdp,
+    fdi_assets_gdp, fdi_liab_gdp,
+    opec_d, hipc_d
+  ) %>%
+  left_join(
+    nfa_decomp %>%
+      select(
+        iso3c, year,
+        dm_A_gdp, dm_B_gdp,
+        nfa_official_gdp,
+        nfa_precise_A_gdp,
+        nfa_precise_B_gdp
+      ),
+    by = c("iso3c", "year")
+  ) %>%
+  left_join(gross_components_panel, by = c("iso3c", "year")) %>%
+  mutate(
+    safe_haven = as.integer(iso3c %in% safe_havens),
+    industrial_d = as.integer(iso3c %in% industrial)
+  ) %>%
+  filter(
+    iso3c %in% countries_79,
+    !is.na(dm_exp_flow_gdp),
+    !is.na(fdi_assets_gdp_gross),
+    !is.na(fdi_liab_gdp_gross),
+    !is.na(equity_assets_gdp_gross),
+    !is.na(equity_liab_gdp_gross),
+    !is.na(debt_assets_gdp_gross),
+    !is.na(debt_liab_gdp_gross)
+  )
+
+message(sprintf(
+  "  Gross-component panel: %d obs, %d countries",
+  nrow(gross_dm_panel), n_distinct(gross_dm_panel$iso3c)
+))
+
+# ── Regressions: dark matter flows on gross portfolio components ──────────────
+#
+# Column (1): H&S 5% dark matter exports.
+# Column (2): same with country FE.
+# Column (3): same with country and year FE.
+# Column (4): component-specific Scenario A dark matter stock.
+# Column (5): component-specific Scenario B dark matter stock.
+
+gross_component_models <- list(
+  "(1) H&S flow" = fixest::feols(
+    dm_exp_flow_gdp ~
+      fdi_assets_gdp_gross + fdi_liab_gdp_gross +
+      equity_assets_gdp_gross + equity_liab_gdp_gross +
+      debt_assets_gdp_gross + debt_liab_gdp_gross,
+    data = gross_dm_panel,
+    vcov = "hetero"
+  ),
+  
+  "(2) H&S flow FE" = fixest::feols(
+    dm_exp_flow_gdp ~
+      fdi_assets_gdp_gross + fdi_liab_gdp_gross +
+      equity_assets_gdp_gross + equity_liab_gdp_gross +
+      debt_assets_gdp_gross + debt_liab_gdp_gross | iso3c,
+    data = gross_dm_panel,
+    vcov = ~iso3c
+  ),
+  
+  "(3) H&S flow TWFE" = fixest::feols(
+    dm_exp_flow_gdp ~
+      fdi_assets_gdp_gross + fdi_liab_gdp_gross +
+      equity_assets_gdp_gross + equity_liab_gdp_gross +
+      debt_assets_gdp_gross + debt_liab_gdp_gross | iso3c + year,
+    data = gross_dm_panel,
+    vcov = ~iso3c
+  ),
+  
+  "(4) DM stock A" = fixest::feols(
+    dm_A_gdp ~
+      fdi_assets_gdp_gross + fdi_liab_gdp_gross +
+      equity_assets_gdp_gross + equity_liab_gdp_gross +
+      debt_assets_gdp_gross + debt_liab_gdp_gross | iso3c + year,
+    data = gross_dm_panel,
+    vcov = ~iso3c
+  ),
+  
+  "(5) DM stock B" = fixest::feols(
+    dm_B_gdp ~
+      fdi_assets_gdp_gross + fdi_liab_gdp_gross +
+      equity_assets_gdp_gross + equity_liab_gdp_gross +
+      debt_assets_gdp_gross + debt_liab_gdp_gross | iso3c + year,
+    data = gross_dm_panel,
+    vcov = ~iso3c
+  )
+)
+
+gross_component_fe_rows <- tribble(
+  ~term,         ~`(1) H&S flow`, ~`(2) H&S flow FE`, ~`(3) H&S flow TWFE`, ~`(4) DM stock A`, ~`(5) DM stock B`,
+  "Country FE",  "No",            "Yes",              "Yes",               "Yes",            "Yes",
+  "Year FE",     "No",            "No",               "Yes",               "Yes",            "Yes"
+)
+attr(gross_component_fe_rows, "position") <- c(10, 11)
+
+gross_component_tex <- modelsummary(
+  gross_component_models,
+  stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt = "%.4f",
+  gof_omit = "AIC|BIC|Log|Adj|Within|RMSE",
+  add_rows = gross_component_fe_rows,
+  coef_rename = c(
+    "fdi_assets_gdp_gross"    = "FDI assets / GDP",
+    "fdi_liab_gdp_gross"      = "FDI liabilities / GDP",
+    "equity_assets_gdp_gross" = "Equity assets / GDP",
+    "equity_liab_gdp_gross"   = "Equity liabilities / GDP",
+    "debt_assets_gdp_gross"   = "Debt assets / GDP",
+    "debt_liab_gdp_gross"     = "Debt liabilities / GDP"
+  ),
+  output = "latex_tabular"
+)
+
+gross_component_tex_wrapped <- paste0(
+  "\\begin{table}[htbp]\n\\centering\n",
+  "\\caption{Gross External Portfolio Components and Dark Matter (1993--", y_ext_end, ")}\n",
+  "\\label{tab:II_gross_components_dm}\n\\scriptsize\n",
+  gross_component_tex, "\n",
+  "\\begin{minipage}{0.95\\linewidth}\n",
+  "\\footnotesize Notes: This table responds to the portfolio-composition interpretation of dark matter. ",
+  "The dependent variable is annual dark matter exports under the H\\&S 5\\% method in columns (1)--(3), ",
+  "and the component-specific dark matter stock under Scenarios A and B in columns (4)--(5). ",
+  "The regressors are gross external asset and liability positions by asset class, expressed as percent of GDP. ",
+  "Standard errors are heteroskedasticity-robust in column (1) and clustered by country in fixed-effect columns. ",
+  "* p$<$0.10, ** p$<$0.05, *** p$<$0.01.\n",
+  "\\end{minipage}\n\\end{table}"
+)
+
+compile_table(
+  gross_component_tex_wrapped,
+  "tab_II_T09_gross_portfolio_components",
+  part = "part_II",
+  landscape = TRUE,
+  table_number = 9,
+  fit_width = TRUE
+)
+
+message("  Gross-component regressions done.")
 
 
 
@@ -3801,6 +4217,141 @@ compile_table(
 
 message("  Extension 2c done.")
 
+# ==============================================================================
+#
+# Extension 2d — VIX, Safe Havens and the Global Financial Crisis Split
+#
+# Motivation:
+# The supervisor suggested that post-global-crisis regressions may generate
+# counterintuitive results. This block tests whether the VIX × safe-haven effect
+# differs before and after 2008.
+#
+# Interpretation:
+#   - Before 2008: safe havens may benefit from "exorbitant privilege".
+#   - After 2008: safe havens may perform an "exorbitant duty" by absorbing
+#     risk and providing insurance/liquidity during crises.
+#
+# ==============================================================================
+
+message("\n── Part III / Extension 2d: Pre/Post GFC VIX split ─────────────────────")
+
+# ── 1. H&S 5% method: pre/post GFC ─────────────────────────────────────────────
+
+p3_e2d_5pct <- p3_e2a_data %>%
+  mutate(
+    period_gfc = if_else(year < 2008, "Pre-GFC", "Post-GFC")
+  ) %>%
+  filter(!is.na(period_gfc))
+
+message("  E2d H&S 5% sample by period:")
+print(
+  p3_e2d_5pct %>%
+    count(period_gfc, name = "n_obs")
+)
+
+# ── 2. Component-specific method: pre/post GFC ────────────────────────────────
+
+p3_e2d_component <- p3_e2b_data %>%
+  mutate(
+    period_gfc = if_else(year < 2008, "Pre-GFC", "Post-GFC")
+  ) %>%
+  filter(!is.na(period_gfc))
+
+message("  E2d component-specific sample by period:")
+print(
+  p3_e2d_component %>%
+    count(period_gfc, name = "n_obs")
+)
+
+# ── 3. Regressions ────────────────────────────────────────────────────────────
+#
+# For the two-way FE regressions, the aggregate VIX level is absorbed by year FE.
+# The identified coefficient is therefore VIX × Safe haven.
+
+p3_e2d_models <- list(
+  "(1) 5% Pre-GFC" = fixest::feols(
+    dm_exp_flow_gdp ~ vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = filter(p3_e2d_5pct, period_gfc == "Pre-GFC"),
+    vcov = ~iso3c
+  ),
+  
+  "(2) 5% Post-GFC" = fixest::feols(
+    dm_exp_flow_gdp ~ vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = filter(p3_e2d_5pct, period_gfc == "Post-GFC"),
+    vcov = ~iso3c
+  ),
+  
+  "(3) Comp. A Pre-GFC" = fixest::feols(
+    dm_exp_flow_A_gdp ~ vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = filter(p3_e2d_component, period_gfc == "Pre-GFC"),
+    vcov = ~iso3c
+  ),
+  
+  "(4) Comp. A Post-GFC" = fixest::feols(
+    dm_exp_flow_A_gdp ~ vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = filter(p3_e2d_component, period_gfc == "Post-GFC"),
+    vcov = ~iso3c
+  ),
+  
+  "(5) Comp. B Post-GFC" = fixest::feols(
+    dm_exp_flow_B_gdp ~ vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = filter(p3_e2d_component, period_gfc == "Post-GFC"),
+    vcov = ~iso3c
+  )
+)
+
+p3_e2d_fe_rows <- tribble(
+  ~term,         ~`(1) 5% Pre-GFC`, ~`(2) 5% Post-GFC`, ~`(3) Comp. A Pre-GFC`, ~`(4) Comp. A Post-GFC`, ~`(5) Comp. B Post-GFC`,
+  "Country FE",  "Yes",             "Yes",              "Yes",                  "Yes",                   "Yes",
+  "Year FE",     "Yes",             "Yes",              "Yes",                  "Yes",                   "Yes"
+)
+attr(p3_e2d_fe_rows, "position") <- c(9, 10)
+
+p3_e2d_tex <- modelsummary(
+  p3_e2d_models,
+  stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt = "%.4f",
+  gof_omit = "AIC|BIC|Log|Adj|Within|RMSE",
+  add_rows = p3_e2d_fe_rows,
+  coef_rename = c(
+    "vix_x_safe"     = "$\\Delta\\log(\\mathrm{VIX})\\times\\mathrm{Safe\\ haven}$",
+    "vix_x_opec"     = "$\\Delta\\log(\\mathrm{VIX})\\times\\mathrm{OPEC}$",
+    "fdi_liab_gdp"   = "FDI liabilities / GDP",
+    "fdi_assets_gdp" = "FDI assets / GDP"
+  ),
+  output = "latex_tabular"
+)
+
+p3_e2d_tex_wrapped <- paste0(
+  "\\begin{table}[htbp]\n\\centering\n",
+  "\\caption{Extension 2d --- VIX, Safe Havens and the Global Financial Crisis Split}\n",
+  "\\label{tab:p3_e2d_vix_gfc_split}\n\\scriptsize\n",
+  p3_e2d_tex, "\n",
+  "\\begin{minipage}{0.95\\linewidth}\n",
+  "\\footnotesize Notes: This table tests whether the VIX-safe-haven relationship changes before and after the Global Financial Crisis. ",
+  "Columns (1)--(2) use the original H\\&S 5\\% method. Columns (3)--(5) use the component-specific method from Part II Section 2. ",
+  "All regressions include country and year fixed effects. Since year fixed effects absorb the aggregate VIX level, identification comes from ",
+  "the differential response of safe havens and OPEC countries to changes in VIX. ",
+  "A negative post-GFC safe-haven coefficient is consistent with an exorbitant-duty interpretation: safe havens may provide insurance or liquidity in crises rather than immediately earning higher annual dark matter exports. ",
+  "Standard errors clustered by country. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.\n",
+  "\\end{minipage}\n\\end{table}"
+)
+
+compile_table(
+  p3_e2d_tex_wrapped,
+  "p3_table_E2d_vix_gfc_split",
+  part = "part_III",
+  landscape = TRUE,
+  table_number = 5,
+  fit_width = TRUE
+)
+
+message("  Extension 2d done.")
 
 # ==============================================================================
 #
@@ -3951,7 +4502,7 @@ compile_table(
   "p3_table_E3_findev",
   part = "part_III",
   landscape = FALSE,
-  table_number = 5,
+  table_number = 6,
   fit_width = TRUE
 )
 
@@ -4228,7 +4779,7 @@ compile_table(
   "p3_table_E4_nii_decomposition_summary",
   part = "part_III",
   landscape = FALSE,
-  table_number = 6,
+  table_number = 7,
   fit_width = FALSE
 )
 
