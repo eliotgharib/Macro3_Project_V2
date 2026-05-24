@@ -1,0 +1,45 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{7}
+\renewcommand{\thetable}{S3}
+\begin{table}[htbp]
+\centering
+\caption{Canaux explicatifs de la dark matter — Coupe transversale 79 pays (1993--2022)}
+\label{tab:channels}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lllllll}
+& (1) Baseline & (2) + Gouv. & (3) + Privilege & (4) + Contrôles & (5) Scén. B & (3) + Dev. fin. \\
+(Intercept) & 28.895 & 50.942** & 50.846** & 37.034* & 37.889** & 71.492*** \\
+& (18.665) & (20.698) & (21.054) & (19.821) & (17.730) & (21.350) \\
+IDE net / PIB \textbackslash{}small\{(canal savoir-faire)\} & 0.130 & 0.244 & 0.244 & 0.406** & 0.534*** & 0.249 \\
+& (0.205) & (0.206) & (0.208) & (0.199) & (0.178) & (0.198) \\
+Volatilité output \textbackslash{}small\{(canal assurance)\} & -1199.892** & -1617.908*** & -1616.627*** & -1091.851** & -987.223** & -1777.318*** \\
+& (470.511) & (495.241) & (500.256) & (516.554) & (462.052) & (479.758) \\
+Règle de droit &  & -20.329** & -20.397** & -17.583* & -20.368** & -2.223 \\
+&  & (9.118) & (9.421) & (9.649) & (8.631) & (11.111) \\
+Privilège \textbackslash{}small\{(USA/GBR/CHE)\} &  &  & 1.456 & 0.495 & 4.632 &  \\
+&  &  & (45.327) & (41.995) & (37.564) &  \\
+Dummy OPEC &  &  &  & -97.229*** & -99.238*** &  \\
+&  &  &  & (34.677) & (31.018) &  \\
+Dummy HIPC &  &  &  & 35.532 & 31.074 &  \\
+&  &  &  & (23.771) & (21.263) &  \\
+Dév. financier \textbackslash{}small\{(canal actif sûr)\} &  &  &  &  &  & -47.249*** \\
+&  &  &  &  &  & (17.822) \\
+Num.Obs. & 77 & 77 & 77 & 77 & 77 & 77 \\
+R2 & 0.092 & 0.150 & 0.150 & 0.293 & 0.347 & 0.225 \\
+R2 Adj. & 0.067 & 0.115 & 0.102 & 0.233 & 0.291 & 0.182 \\
+F & 3.732 & 4.278 & 3.165 & 4.845 & 6.210 &  \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: VD: dark matter moyenne (\% du PIB) sur 1993--2022. Scén. A pour colonnes (1)--(4), Scén. B pour colonne (5). Canal savoir-faire: IDE net / PIB, signe attendu positif. Canal assurance: volatilité HP, signe attendu négatif. Canal privilege: dummy USA/GBR/CHE, signe attendu positif. Variables winsorisées à 1\%. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}

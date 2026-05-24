@@ -1,0 +1,49 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{4}
+\begin{table}[htbp]
+\centering
+\caption{Extension 3 --- Financial Development and Safe Asset Production Capacity (1980--2022)}
+\label{tab:p3_e3_findev}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llllll}
+& (1) Baseline & (2) Credit & (3) Mkt cap & (4) FinDev idx & (5) Full \\
+(Intercept) & 0.443 & 0.846** & 0.687* & 0.809** & 0.552 \\
+& (0.330) & (0.413) & (0.361) & (0.386) & (0.401) \\
+FDI assets / GDP & -0.606* & -0.398 & -0.474 & -0.412 & -0.088 \\
+& (0.345) & (0.366) & (0.352) & (0.358) & (0.373) \\
+FDI liabilities / GDP & 0.524 & 0.340 & 0.407 & 0.352 & 0.039 \\
+& (0.322) & (0.339) & (0.327) & (0.332) & (0.348) \\
+Output volatility (HP) & -24.981*** & -29.407*** & -27.977*** & -29.250*** & -25.486*** \\
+& (8.358) & (8.721) & (8.480) & (8.589) & (9.580) \\
+Private credit / GDP (std.) &  & -0.486 &  &  &  \\
+&  & (0.304) &  &  &  \\
+Stock market cap / GDP (std.) &  &  & -0.278 &  &  \\
+&  &  & (0.174) &  &  \\
+FinDev composite (std.) &  &  &  & -0.430* & -0.023 \\
+&  &  &  & (0.244) & (0.361) \\
+Intangible intensity (std.) &  &  &  &  & -0.388 \\
+&  &  &  &  & (0.332) \\
+Rule of Law &  &  &  &  & -0.105 \\
+&  &  &  &  & (0.247) \\
+OPEC dummy &  &  &  &  & -1.251* \\
+&  &  &  &  & (0.643) \\
+HIPC dummy &  &  &  &  & 0.678 \\
+&  &  &  &  & (0.511) \\
+Num.Obs. & 78 & 78 & 78 & 78 & 78 \\
+R2 & 0.132 & 0.162 & 0.162 & 0.168 & 0.268 \\
+R2 Adj. & 0.097 & 0.116 & 0.116 & 0.122 & 0.183 \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: Dependent variable: cumulative dark matter exports over 1980--2022, divided by end-year GDP. The FinDev composite index is the mean of z-standardised log(private credit/GDP) and log(stock market capitalisation/GDP). Column (5) includes financial development, intangible intensity and institutional controls jointly. All variables winsorised at the 1\% level. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}

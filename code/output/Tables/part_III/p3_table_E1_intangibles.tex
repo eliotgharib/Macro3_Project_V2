@@ -1,0 +1,39 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{0}
+\begin{table}[htbp]
+\centering
+\caption{Extension 1 --- R\&D, Intangible Capital and Dark Matter (1980--2022)}
+\label{tab:p3_e1_intangibles}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llllll}
+& (1) Baseline & (2) R\&D only & (3) Intangibles & (4) R\&D + Intang. & (5) Industrial \\
+(Intercept) & 0.443 & 0.546 & 0.629* & 0.654* & 1.063 \\
+& (0.330) & (0.358) & (0.352) & (0.363) & (0.984) \\
+FDI assets / GDP & -0.606* & -0.341 & -0.414 & -0.211 & 1.297 \\
+& (0.345) & (0.358) & (0.367) & (0.366) & (1.035) \\
+FDI liabilities / GDP & 0.524 & 0.273 & 0.334 & 0.141 & -2.145* \\
+& (0.322) & (0.335) & (0.345) & (0.344) & (1.144) \\
+Output volatility (HP) & -24.981*** & -26.961*** & -29.124*** & -28.345*** & 6.434 \\
+& (8.358) & (9.284) & (8.770) & (9.260) & (41.179) \\
+R\textbackslash{}\&D intensity (std.) &  & -0.244 &  & -0.026 &  \\
+&  & (0.169) &  & (0.225) &  \\
+Intangible intensity (std.) &  &  & -0.414 & -0.574 & -1.212* \\
+&  &  & (0.285) & (0.396) & (0.688) \\
+Num.Obs. & 78 & 74 & 78 & 74 & 19 \\
+R2 & 0.132 & 0.132 & 0.157 & 0.158 & 0.581 \\
+R2 Adj. & 0.097 & 0.082 & 0.111 & 0.096 & 0.461 \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: Dependent variable: cumulative dark matter exports over 1980--2022, divided by end-year GDP. The intangible index is the row mean of four standardised components: R\&D/GDP, log resident patent applications, log high-technology export share, and log ICT service exports. At least two components are required per country-year. All variables winsorised at the 1\% level. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}

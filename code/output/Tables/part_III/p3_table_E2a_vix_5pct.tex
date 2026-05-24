@@ -1,0 +1,42 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[landscape, margin=0.7in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{1}
+\begin{table}[htbp]
+\centering
+\caption{Extension 2a --- VIX Sensitivity of Dark Matter Exports: H\&S 5\% Method (1990--2022)}
+\label{tab:p3_e2a_vix_5pct}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llllll}
+& (1) & (2) Interact. & (3) FE & (4) FE+Int. & (5) Two-way \\
+(Intercept) & -1.4390** & -1.4249** &  &  &  \\
+& (0.6641) & (0.6619) &  &  &  \\
+\$\textbackslash{}Delta\textbackslash{}log(\textbackslash{}mathrm\{VIX\})\$ & 4.5027* & 7.3394*** & 4.6037 & 7.4364* &  \\
+& (2.5874) & (2.7980) & (3.6254) & (3.9241) &  \\
+FDI liabilities / GDP & -0.0070 & -0.0071 & -0.0021 & -0.0022 & -0.0030 \\
+& (0.0134) & (0.0134) & (0.0091) & (0.0090) & (0.0095) \\
+FDI assets / GDP & 0.0034 & 0.0036 & -0.0002 & -0.0001 & 0.0008 \\
+& (0.0145) & (0.0144) & (0.0065) & (0.0064) & (0.0070) \\
+Country FE & No & No & Yes & Yes & Yes \\
+Year FE & No & No & No & No & Yes \\
+\$\textbackslash{}Delta\textbackslash{}log(\textbackslash{}mathrm\{VIX\})\textbackslash{}times\textbackslash{}mathrm\{Safe\textbackslash{} haven\}\$ &  & -29.3406*** &  & -29.5249** & -29.2679** \\
+&  & (7.6185) &  & (11.3907) & (11.5328) \\
+\$\textbackslash{}Delta\textbackslash{}log(\textbackslash{}mathrm\{VIX\})\textbackslash{}times\textbackslash{}mathrm\{OPEC\}\$ &  & 0.9565 &  & 1.2427 & 1.4939 \\
+&  & (12.5956) &  & (9.1032) & (9.2819) \\
+Num.Obs. & 2420 & 2420 & 2420 & 2420 & 2420 \\
+R2 & 0.003 & 0.008 & 0.055 & 0.061 & 0.095 \\
+FE: iso3c &  &  & X & X & X \\
+FE: year &  &  &  &  & X \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: Dependent variable: annual dark matter exports divided by GDP, computed with the original H\&S assumption $NFA^{DM}=NII/0.05$. Safe-haven countries: USA, CHE, DEU, GBR, JPN, NLD, AUT, DNK, NOR. Columns (1)--(2): heteroskedasticity-robust standard errors. Columns (3)--(5): standard errors clustered by country. In column (5), year fixed effects absorb the aggregate VIX level. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}

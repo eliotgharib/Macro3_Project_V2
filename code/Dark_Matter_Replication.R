@@ -539,6 +539,7 @@ print(sample_compare)
 col_blue <- "#2166AC"
 col_red  <- "#B2182B"
 col_grey <- "grey45"
+col_green <- "#238B45"
 
 theme_paper <- theme_bw(base_size = 11) +
   theme(
@@ -823,6 +824,7 @@ compile_table <- function(tex_content, filename, part = "part_I",
     "\\usepackage{booktabs}\n",
     "\\usepackage{dcolumn}\n",
     "\\usepackage{graphicx}\n",
+    "\\usepackage{amsmath}\n",
     geom,
     "\\begin{document}\n",
     "\\small\n",
@@ -1251,6 +1253,40 @@ message("Main replication uses cs_available; cs_strict is kept as robustness dia
 # ==============================================================================
 
 # Figure 2 — The US interest spread (1980–2005)
+
+ewn_full <- EWN_raw %>%
+  rename(
+    ifs_code     = IFS_Code,
+    year         = Year,
+    fdi_assets   = `FDI assets (stock)`,
+    fdi_liab     = `FDI liabilities (stock)`,
+    total_assets = `Total assets`,
+    total_liab   = `Total liabilities`,
+    nfa          = `Net IIP excl gold`,
+    gdp_usd      = `GDP (US$)`,
+    ca_ewn       = `Current account balance`
+  ) %>%
+  mutate(
+    nfa_official = nfa,
+    gdp_ewn      = gdp_usd
+  ) %>%
+  select(
+    ifs_code, year,
+    fdi_assets, fdi_liab,
+    total_assets, total_liab,
+    nfa, nfa_official,
+    gdp_usd, gdp_ewn,
+    ca_ewn
+  ) %>%
+  filter(year >= y_start, year <= y_end) %>%
+  mutate(
+    iso3c          = countrycode(ifs_code, "imf", "iso3c", warn = FALSE),
+    nfa_gdp        = nfa        / gdp_usd * 100,
+    fdi_assets_gdp = fdi_assets / gdp_usd * 100,
+    fdi_liab_gdp   = fdi_liab   / gdp_usd * 100
+  ) %>%
+  filter(!is.na(iso3c))
+
 usa_gross_income <- bop_raw %>%
   rename(series_code = SERIES_CODE) %>%
   mutate(iso3c     = str_extract(series_code,"^[^.]+"),
@@ -1993,6 +2029,12 @@ message("Section 1 done.")
 # (grey bars dominate). The fix: when sub-components sum to < 30% of total NII,
 # distribute total NII proportionally using EWN net-stock weights.
 # This ensures China's chart shows informative colored bars rather than all grey.
+
+# New fix:
+# China's total NII is available, but BOP sub-components are weakly reported.
+# For China, when reported sub-components cover less than 90% of total NII,
+# we allocate total NII across FDI, equity and debt using EWN gross-position
+# weights. This changes only the asset-class decomposition, not total NII.
 # ==============================================================================
 
 codes_comp <- c(
@@ -2024,44 +2066,162 @@ nii_raw <- map_dfr(names(codes_comp), function(vn) {
   pivot_wider(names_from=component, values_from=value)
 
 # Merge EWN stocks for imputation weights, then apply China fix
+#
+# China is a special case because BOP income sub-components are weakly reported.
+# We keep total NII unchanged, but improve the allocation across asset classes.
+# When sub-components are poorly covered, total NII is distributed across
+# FDI, equity and debt using EWN gross-position weights rather than net weights.
+#
+# General rule: impute if coverage < 30%.
+# China rule:   impute if coverage < 90%, because the diagnostic shows that
+#               many CHN years have partial but insufficient coverage.
+
 nii_comp_long <- nii_raw %>%
-  left_join(EWN_ext %>% select(iso3c, year, net_fdi, net_equity, net_debt,
-                               nfa_official, gdp_usd),
-            by = c("iso3c","year")) %>%
+  left_join(
+    EWN_ext %>%
+      select(
+        iso3c, year,
+        fdi_assets, fdi_liab,
+        eq_assets, eq_liab,
+        debt_assets, debt_liab,
+        net_fdi, net_equity, net_debt,
+        nfa_official, gdp_usd
+      ),
+    by = c("iso3c", "year")
+  ) %>%
   filter(!is.na(gdp_usd)) %>%
   mutate(
-    # Sub-component coverage ratio
-    sub_sum  = coalesce(nii_fdi,0) + coalesce(nii_equity,0) +
-      coalesce(nii_debt,0) + coalesce(nii_other,0),
-    coverage = if_else(abs(nii_total) > 0.1, abs(sub_sum)/abs(nii_total), 1),
-    # EWN stock weights for imputation (use absolute net stocks)
-    abs_fdi   = abs(net_fdi),
-    abs_eq    = abs(net_equity),
-    abs_debt  = abs(net_debt),
-    stk_tot   = abs_fdi + abs_eq + abs_debt,
-    w_fdi     = if_else(stk_tot > 0, abs_fdi  / stk_tot, 1/3),
-    w_eq      = if_else(stk_tot > 0, abs_eq   / stk_tot, 1/3),
-    w_debt    = if_else(stk_tot > 0, abs_debt / stk_tot, 1/3),
-    # Impute when coverage < 30%
-    impute    = !is.na(nii_total) & coverage < 0.30,
-    nii_fdi    = if_else(impute, nii_total * w_fdi,  nii_fdi),
-    nii_equity = if_else(impute, nii_total * w_eq,   nii_equity),
-    nii_debt   = if_else(impute, nii_total * w_debt, nii_debt),
-    nii_other  = if_else(impute,
-                         nii_total - nii_fdi - nii_equity - nii_debt, nii_other)
-  ) %>%
-  select(-sub_sum, -coverage, -abs_fdi, -abs_eq, -abs_debt, -stk_tot,
-         -w_fdi, -w_eq, -w_debt)
+    # Sub-component coverage ratio before imputation
+    sub_sum = coalesce(nii_fdi, 0) +
+      coalesce(nii_equity, 0) +
+      coalesce(nii_debt, 0) +
+      coalesce(nii_other, 0),
+    
+    coverage = if_else(
+      !is.na(nii_total) & abs(nii_total) > 0.1,
+      abs(sub_sum) / abs(nii_total),
+      NA_real_
+    ),
+    
+    # Gross-position weights.
+    # These are preferred for allocation because income flows arise from gross
+    # cross-border positions rather than from net positions.
+    gross_fdi  = abs(fdi_assets)  + abs(fdi_liab),
+    gross_eq   = abs(eq_assets)   + abs(eq_liab),
+    gross_debt = abs(debt_assets) + abs(debt_liab),
+    
+    gross_total = gross_fdi + gross_eq + gross_debt,
+    
+    w_fdi_gross  = if_else(gross_total > 0, gross_fdi  / gross_total, NA_real_),
+    w_eq_gross   = if_else(gross_total > 0, gross_eq   / gross_total, NA_real_),
+    w_debt_gross = if_else(gross_total > 0, gross_debt / gross_total, NA_real_),
+    
+    # Net-position fallback if gross stocks are missing
+    abs_fdi  = abs(net_fdi),
+    abs_eq   = abs(net_equity),
+    abs_debt = abs(net_debt),
+    
+    net_total_abs = abs_fdi + abs_eq + abs_debt,
+    
+    w_fdi_net  = if_else(net_total_abs > 0, abs_fdi  / net_total_abs, NA_real_),
+    w_eq_net   = if_else(net_total_abs > 0, abs_eq   / net_total_abs, NA_real_),
+    w_debt_net = if_else(net_total_abs > 0, abs_debt / net_total_abs, NA_real_),
+    
+    # Final weights: gross preferred, then net fallback, then equal weights
+    w_fdi  = coalesce(w_fdi_gross,  w_fdi_net,  1 / 3),
+    w_eq   = coalesce(w_eq_gross,   w_eq_net,   1 / 3),
+    w_debt = coalesce(w_debt_gross, w_debt_net, 1 / 3),
+    
+    w_sum = w_fdi + w_eq + w_debt,
+    
+    w_fdi  = w_fdi  / w_sum,
+    w_eq   = w_eq   / w_sum,
+    w_debt = w_debt / w_sum,
+    
+    # Imputation rule:
+    # - all countries: impute if coverage < 30%;
+    # - China: stricter threshold, impute if coverage < 90%.
+    impute = !is.na(nii_total) &
+      (
+        is.na(coverage) |
+          coverage < 0.30 |
+          (iso3c == "CHN" & coverage < 0.90)
+      ),
+    
+    # Preserve original BOP components for diagnostics
+    nii_fdi_raw    = nii_fdi,
+    nii_equity_raw = nii_equity,
+    nii_debt_raw   = nii_debt,
+    nii_other_raw  = nii_other,
+    
+    # Imputed components
+    nii_fdi_imp    = nii_total * w_fdi,
+    nii_equity_imp = nii_total * w_eq,
+    nii_debt_imp   = nii_total * w_debt,
+    nii_other_imp  = 0,
+    
+    # Final components
+    nii_fdi    = if_else(impute, nii_fdi_imp,    nii_fdi),
+    nii_equity = if_else(impute, nii_equity_imp, nii_equity),
+    nii_debt   = if_else(impute, nii_debt_imp,   nii_debt),
+    nii_other  = if_else(impute, nii_other_imp,  nii_other),
+    
+    # Check final component sum
+    nii_comp_sum = coalesce(nii_fdi, 0) +
+      coalesce(nii_equity, 0) +
+      coalesce(nii_debt, 0) +
+      coalesce(nii_other, 0),
+    
+    coverage_after = if_else(
+      !is.na(nii_total) & abs(nii_total) > 0.1,
+      abs(nii_comp_sum) / abs(nii_total),
+      NA_real_
+    )
+  )
 
-message(sprintf("Sub-component imputation: %d country-years (coverage < 30%%)",
-                sum(nii_comp_long$impute, na.rm=TRUE)))
-message(sprintf("  of which CHN: %d",
-                sum(nii_comp_long$impute[nii_comp_long$iso3c=="CHN"], na.rm=TRUE)))
+message(sprintf(
+  "Sub-component imputation: %d country-years",
+  sum(nii_comp_long$impute, na.rm = TRUE)
+))
+
+message(sprintf(
+  "  of which CHN: %d",
+  sum(nii_comp_long$impute[nii_comp_long$iso3c == "CHN"], na.rm = TRUE)
+))
+
+message("China component diagnostic after imputation:")
+print(
+  nii_comp_long %>%
+    filter(iso3c == "CHN") %>%
+    summarise(
+      first_year = min(year, na.rm = TRUE),
+      last_year = max(year, na.rm = TRUE),
+      n_obs = n(),
+      n_total_nii = sum(!is.na(nii_total)),
+      n_imputed = sum(impute, na.rm = TRUE),
+      mean_coverage_before = mean(coverage, na.rm = TRUE),
+      mean_coverage_after = mean(coverage_after, na.rm = TRUE),
+      mean_w_fdi = mean(w_fdi, na.rm = TRUE),
+      mean_w_eq = mean(w_eq, na.rm = TRUE),
+      mean_w_debt = mean(w_debt, na.rm = TRUE)
+    )
+)
 
 
 # ==============================================================================
 # 2.2 — Assign scenario rates and compute NFA components (both scenarios)
 # ==============================================================================
+
+# Keep only variables needed downstream, plus diagnostics useful for China.
+nii_comp_long <- nii_comp_long %>%
+  select(
+    iso3c, year,
+    nii_fdi, nii_equity, nii_debt, nii_other, nii_total,
+    nfa_official, gdp_usd,
+    net_fdi, net_equity, net_debt,
+    impute, coverage, coverage_after,
+    w_fdi, w_eq, w_debt
+  )
 
 country_rates <- nii_comp_long %>%
   distinct(iso3c) %>%
@@ -2236,12 +2396,16 @@ make_2x2_nfa <- function(scenario = "A") {
   p_eu  <- make_one_panel("EU",  "Union européenne", scenario)
   
   sub_title <- if (scenario == "A") {
-    paste0("Scénario A — Taux G\\&R (2006) universels: r\\textsubscript{FDI}=8\\%, ",
-           "r\\textsubscript{actions}=6\\%, r\\textsubscript{dette}=3\\%, r\\textsubscript{autres}=5\\%.")
+    paste0(
+      "Scénario A — taux universels G&R (2006): ",
+      "FDI = 8%, actions = 6%, dette = 3%, autres = 5%."
+    )
   } else {
-    paste0("Scénario B — Taux différenciés (GRG 2017): ",
-           "Privilège (USA/CHE/GBR) r\\textsubscript{FDI}=9\\%, r\\textsubscript{dette}=2\\%; ",
-           "Avancé: baseline; Émergent (CHN) r\\textsubscript{FDI}=6\\%, r\\textsubscript{dette}=5\\%.")
+    paste0(
+      "Scénario B — taux différenciés: ",
+      "privilège USA/CHE/GBR, FDI = 9%, dette = 2%; ",
+      "avancés = baseline; émergents, FDI = 6%, dette = 5%."
+    )
   }
   
   (p_usa | p_jpn) / (p_chn | p_eu) +
@@ -2250,7 +2414,7 @@ make_2x2_nfa <- function(scenario = "A") {
       title    = "NFA par classe d'actif — USA, Japon, Chine, Union européenne",
       subtitle = paste0(
         sub_title,
-        " Aires = composantes NFA (NII\\textsubscript{j}/r\\textsubscript{j}). ",
+        "Aires = composantes NFA capitalisées par classe d'actif. ",
         "Ligne grise = NIIP officielle (EWN). Écart = dark matter. ",
         "% du PIB, 1993\u2013", y_ext_end, "."),
       theme = theme(
@@ -2379,23 +2543,38 @@ dm_cs <- nfa_decomp %>%
   mutate(privilege_d = as.integer(iso3c %in% privilege_countries))
 
 # Financial depth from cached WDI file (if Part III has been run before)
-findev_path <- here("code","data","wdi_findev.csv")
+
+findev_path <- here("code", "data", "wdi_findev.csv")
+
 if (file.exists(findev_path)) {
-  findev_cs <- read_csv(findev_path, show_col_types=FALSE) %>%
+  
+  findev_cs <- read_csv(findev_path, show_col_types = FALSE) %>%
     filter(!is.na(iso3c), year >= 1993) %>%
+    mutate(
+      credit_log = log1p(coalesce(private_credit, 0)),
+      mktcap_log = log1p(coalesce(stock_mktcap,  0))
+    ) %>%
+    ungroup() %>%
+    mutate(
+      z_credit = as.numeric(scale(credit_log)),
+      z_mktcap = as.numeric(scale(mktcap_log)),
+      findev_idx_annual = rowMeans(cbind(z_credit, z_mktcap), na.rm = TRUE)
+    ) %>%
     group_by(iso3c) %>%
     summarise(
-      z_credit  = as.numeric(scale(log1p(coalesce(private_credit, 0)))),
-      z_mktcap  = as.numeric(scale(log1p(coalesce(stock_mktcap,  0)))),
-      findev_idx = rowMeans(cbind(z_credit, z_mktcap), na.rm=TRUE),
-      .groups = "drop") %>%
-    group_by(iso3c) %>% summarise(findev_idx=mean(findev_idx,na.rm=TRUE),.groups="drop")
-  dm_cs <- dm_cs %>% left_join(findev_cs, by="iso3c")
+      findev_idx = mean(findev_idx_annual, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  dm_cs <- dm_cs %>% left_join(findev_cs, by = "iso3c")
   has_findev <- TRUE
+  
 } else {
+  
   dm_cs <- dm_cs %>% mutate(findev_idx = NA_real_)
   has_findev <- FALSE
   message("wdi_findev.csv not found — findev channel omitted from regression.")
+  
 }
 
 
@@ -2735,17 +2914,27 @@ message("Tables  : code/output/tables/part_II/")
 #
 # ==============================================================================
 # ==============================================================================
-
-#
 # Three new tests that go beyond extending H&S's time window.
 # Each targets a specific theoretical mechanism that H&S identify but either
 # leave static or fail to confirm empirically:
 #
-#   Extension 1  — The Safe-Asset Cycle (VIX)
-#   Extension 1b — Financial vs. Geopolitical Risk (VIX vs. GPR horse race)
-#   Extension 2  — Intangible Capital Intensity
+#   Extension 1  — R&D and Intangible Capital
+#                  Tests the knowledge-capital channel first.
+#
+#   Extension 2a — Safe-Asset Cycle, baseline 5% method
+#                  Uses H&S's original dark-matter flow:
+#                  dm_exp_flow_gdp = CA_DM(5%) - CA_official.
+#
+#   Extension 2b — Safe-Asset Cycle, component-specific method
+#                  Repeats the VIX test using the Part II Section 2 method:
+#                  NFA_j = NII_j / r_j by asset class, then annual flow.
+#
+#   Extension 2c — Financial vs. Geopolitical Risk
+#                  Horse race between VIX and GPR.
+#
 #   Extension 3  — Financial Development and Safe Asset Production
-#   Extension 4  — NII Decomposition by Asset Class
+#
+#   Extension 4  — NII Composition / remaining robustness extensions
 #
 # Data files required in code/data/:
 #   vix_daily.csv        (FRED VIXCLS — already downloaded)
@@ -2761,10 +2950,25 @@ message("Tables  : code/output/tables/part_II/")
 
 library(sandwich)
 
+# ── Small safeguards ──────────────────────────────────────────────────────────
+
+if (!exists("col_green")) col_green <- "#238B45"
+
+safe_havens <- c("USA", "CHE", "DEU", "GBR", "JPN", "NLD", "AUT", "DNK", "NOR")
+
+for (d in c("output/figures/part_III", "output/tables/part_III")) {
+  dir.create(here("code", d), recursive = TRUE, showWarnings = FALSE)
+}
+
+z_std <- function(x) as.numeric(scale(x))
+
+mean_or_na2 <- function(x) {
+  if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+}
+
 # ── WDI caching helper ─────────────────────────────────────────────────────────
 #
-# We download WDI data once and save it as a CSV so subsequent runs do not
-# require an internet connection. If the file already exists we just read it.
+# Downloads once, then reuses cached CSVs from code/data/.
 
 fetch_or_load_wdi <- function(filename, indicators, start, end) {
   path <- here("code", "data", filename)
@@ -2774,7 +2978,7 @@ fetch_or_load_wdi <- function(filename, indicators, start, end) {
     df <- read_csv(path, show_col_types = FALSE)
     
     if (!"iso3c" %in% names(df)) {
-      message("  Cache file is not in the expected format. Deleting and re-downloading...")
+      message("  Cache file is not in expected format. Re-downloading.")
       file.remove(path)
       
       df <- WDI::WDI(
@@ -2828,293 +3032,600 @@ fetch_or_load_wdi <- function(filename, indicators, start, end) {
 
 # ==============================================================================
 #
-# Extension 1 — The Safe-Asset Cycle (VIX)
+# Extension 1 — R&D and Intangible Capital
 #
-# H&S model the insurance channel as a static cross-sectional relationship:
-# countries with more volatile output pay a risk premium to stable ones.
-# But if insurance is what it claims to be, its price should move over time —
-# rising when global risk appetite collapses and falling when it recovers.
+# This comes first because it directly tests the knowledge-capital channel:
+# countries with high intangible intensity should export more dark matter if
+# unrecorded know-how, blueprints, brands and software are a source of excess
+# foreign income.
 #
-# The Global Financial Cycle literature (Rey 2013 JME; Miranda-Agrippino & Rey
-# 2020 AER; Caballero, Farhi & Gourinchas 2017 QJE) gives us the instrument:
-# the VIX, which captures global risk appetite in a single daily time series.
-#
-# Our prediction is simple: when the VIX spikes, safe-haven countries should
-# export more dark matter — the insurance premium they charge goes up.
-# Commodity exporters and HIPC countries should move in the opposite direction.
-#
-# We test this with a panel regression interacting ΔlogVIX with country group
-# dummies, progressively absorbing country and year fixed effects. The cleanest
-# specification (column 5) includes two-way FE so the aggregate VIX level is
-# absorbed by year dummies, identifying only the differential response.
-#
-# Data: vix_daily.csv — FRED series VIXCLS, daily since 1990.
-#       We aggregate to annual means and take log-differences.
+# We build a composite index from:
+#   - R&D expenditure / GDP
+#   - log resident patent applications
+#   - log high-tech export share
+#   - log ICT service exports
 #
 # ==============================================================================
 
-message("\n── Extension 1: Safe-Asset Cycle (VIX) ──────────────────────────────────")
+message("\n── Part III / Extension 1: R&D and Intangible Capital ───────────────────")
 
-# ── Load and aggregate VIX ────────────────────────────────────────────────────
+# ── Load WDI intangible indicators ─────────────────────────────────────────────
 
-vix_annual <- read_csv(
-  here("code", "data", "vix_daily.csv"),
-  show_col_types = FALSE
+p3_e1_wdi_intangibles <- fetch_or_load_wdi(
+  filename = "wdi_intangibles.csv",
+  indicators = c(
+    rnd_gdp      = "GB.XPD.RSDV.GD.ZS",
+    patents_res  = "IP.PAT.RESD",
+    hitech_share = "TX.VAL.TECH.MF.ZS",
+    ict_exports  = "BX.GSR.CCIS.ZS"
+  ),
+  start = 1980,
+  end   = y_ext_end
 ) %>%
-  rename(date = observation_date, vix = VIXCLS) %>%
-  mutate(date = as.Date(date),
-         year = as.integer(format(date, "%Y")),
-         vix  = suppressWarnings(as.numeric(vix))) %>%
-  filter(!is.na(vix), year >= 1990, year <= y_ext_end) %>%
-  group_by(year) %>%
-  summarise(vix = mean(vix, na.rm = TRUE), .groups = "drop") %>%
-  arrange(year) %>%
-  mutate(d_log_vix = c(NA_real_, diff(log(vix))))
+  filter(!is.na(iso3c), year >= 1980, year <= y_ext_end)
 
-message(sprintf("  VIX: %d annual obs (%d–%d)",
-                nrow(vix_annual), min(vix_annual$year), max(vix_annual$year)))
+# ── Build annual and country-level intangible index ───────────────────────────
 
-# ── Merge VIX into the extended panel ─────────────────────────────────────────
-
-safe_havens <- c("USA", "CHE", "DEU", "GBR", "JPN", "NLD", "AUT", "DNK", "NOR")
-
-panel_vix <- panel_ext %>%
-  filter(year >= 1990, year <= y_ext_end) %>%
-  left_join(vix_annual, by = "year") %>%
+p3_e1_intangibles_annual <- p3_e1_wdi_intangibles %>%
   mutate(
-    safe_d     = as.integer(iso3c %in% safe_havens),
-    vix_x_safe = d_log_vix * safe_d,
-    vix_x_opec = d_log_vix * opec_d
-  )
+    rnd_clean     = if_else(rnd_gdp < 0, NA_real_, rnd_gdp),
+    patents_log   = log1p(if_else(patents_res  < 0, NA_real_, patents_res)),
+    hitech_log    = log1p(if_else(hitech_share < 0, NA_real_, hitech_share)),
+    ict_log       = log1p(if_else(ict_exports  < 0, NA_real_, ict_exports))
+  ) %>%
+  mutate(
+    z_rnd     = z_std(rnd_clean),
+    z_patents = z_std(patents_log),
+    z_hitech  = z_std(hitech_log),
+    z_ict     = z_std(ict_log)
+  ) %>%
+  rowwise() %>%
+  mutate(
+    n_intang_components = sum(!is.na(c_across(c(z_rnd, z_patents, z_hitech, z_ict)))),
+    intang_idx_annual = if_else(
+      n_intang_components >= 2,
+      mean(c_across(c(z_rnd, z_patents, z_hitech, z_ict)), na.rm = TRUE),
+      NA_real_
+    )
+  ) %>%
+  ungroup()
 
-# ── Country-level VIX betas ────────────────────────────────────────────────────
-#
-# For each country we run a simple OLS of annual dark matter exports on ΔlogVIX,
-# with heteroskedasticity-robust standard errors (HC1). We require at least
-# 12 observations to get a stable estimate.
-
-compute_vix_beta <- function(df) {
-  df <- df %>% filter(!is.na(dm_exp_flow_gdp), !is.na(d_log_vix))
-  
-  if (nrow(df) < 12) {
-    return(tibble(
-      beta_vix = NA_real_,
-      se_vix   = NA_real_,
-      t_vix    = NA_real_,
-      n_obs    = nrow(df),
-      r2       = NA_real_
-    ))
-  }
-  
-  fit <- lm(dm_exp_flow_gdp ~ d_log_vix, data = df)
-  
-  vcv <- tryCatch(
-    sandwich::vcovHC(fit, type = "HC1"),
-    error = function(e) vcov(fit)
-  )
-  
-  tibble(
-    beta_vix = coef(fit)[["d_log_vix"]],
-    se_vix   = sqrt(vcv["d_log_vix", "d_log_vix"]),
-    t_vix    = coef(fit)[["d_log_vix"]] / sqrt(vcv["d_log_vix", "d_log_vix"]),
-    n_obs    = nrow(df),
-    r2       = summary(fit)$r.squared
-  )
-}
-
-vix_betas <- panel_vix %>%
-  filter(iso3c %in% countries_79) %>%
+p3_e1_intangibles_cs <- p3_e1_intangibles_annual %>%
   group_by(iso3c) %>%
-  group_modify(~ compute_vix_beta(.x)) %>%
-  ungroup() %>%
-  filter(!is.na(beta_vix)) %>%
-  mutate(
-    group = case_when(
-      iso3c %in% safe_havens ~ "Safe haven",
-      iso3c %in% opec        ~ "OPEC",
-      iso3c %in% hipc        ~ "HIPC",
-      TRUE                   ~ "Other"),
-    significant = abs(t_vix) > 1.645   # 10% one-sided
+  summarise(
+    rnd_avg_wdi      = mean_or_na2(rnd_clean),
+    z_rnd_avg        = mean_or_na2(z_rnd),
+    z_patents_avg    = mean_or_na2(z_patents),
+    z_hitech_avg     = mean_or_na2(z_hitech),
+    z_ict_avg        = mean_or_na2(z_ict),
+    intang_idx       = mean_or_na2(intang_idx_annual),
+    intang_coverage  = sum(!is.na(intang_idx_annual)),
+    .groups = "drop"
   )
 
-# ── Figure E1a — Country-level VIX betas (ranked bar chart) ──────────────────
-#
-# Bars are faded when the coefficient is not significant at the 10% level.
-# Safe-haven countries should cluster at the top (positive betas);
-# commodity exporters at the bottom (negative betas).
+# ── Cross-section dataset ─────────────────────────────────────────────────────
 
-fig_e1_bars <- vix_betas %>%
-  ggplot(aes(x = reorder(iso3c, beta_vix), y = beta_vix,
-             fill = group, alpha = significant)) +
-  geom_col(width = 0.75) +
-  geom_hline(yintercept = 0, colour = "grey20", linewidth = 0.5) +
-  scale_fill_manual(
-    values = c("Safe haven" = col_blue, "OPEC" = col_red,
-               "HIPC" = "grey55", "Other" = "grey78"),
-    name = NULL) +
-  scale_alpha_manual(values = c("TRUE" = 0.92, "FALSE" = 0.28), guide = "none") +
-  coord_flip() +
-  labs(
-    title    = "Extension 1 — Country VIX Beta: Dark Matter Exports vs. Global Risk",
-    subtitle = paste0("OLS coefficient of annual dark matter exports/GDP on \u0394log(VIX), ",
-                      "1990\u2013", y_ext_end, ". Faded bars: |t| < 1.645. HC1 robust SE."),
-    x = NULL, y = "OLS beta on \u0394 log(VIX)") +
-  theme_paper +
-  theme(legend.position = "bottom", axis.text.y = element_text(size = 6.5))
+p3_e1_cs <- cs_ext %>%
+  left_join(p3_e1_intangibles_cs, by = "iso3c") %>%
+  mutate(
+    dm_exp_ratio     = dm_exp_gdp     / 100,
+    fdi_assets_ratio = fdi_assets_gdp / 100,
+    fdi_liab_ratio   = fdi_liab_gdp   / 100
+  )
 
-save_fig(fig_e1_bars, "E1a_vix_beta_countries", part = "part_III", w = 7.5, h = 11)
+p3_e1_data <- p3_e1_cs %>%
+  filter(
+    iso3c %in% countries_79,
+    !is.na(dm_exp_ratio),
+    !is.na(fdi_assets_ratio),
+    !is.na(fdi_liab_ratio),
+    !is.na(output_vol_hp)
+  ) %>%
+  mutate(
+    across(
+      any_of(c(
+        "dm_exp_ratio", "fdi_assets_ratio", "fdi_liab_ratio",
+        "output_vol_hp", "z_rnd_avg", "intang_idx",
+        "rule_of_law"
+      )),
+      winsor
+    )
+  )
 
-# ── Figure E1b — Group-level VIX betas ────────────────────────────────────────
-#
-# Average beta by country group with 95% CI of the group mean.
-# A positive safe-haven beta and negative OPEC beta would confirm the
-# time-varying nature of H&S's insurance channel.
+message(sprintf(
+  "  E1 sample: %d obs, %d countries",
+  nrow(p3_e1_data), n_distinct(p3_e1_data$iso3c)
+))
 
-vix_group <- vix_betas %>%
-  group_by(group) %>%
-  summarise(mu = mean(beta_vix),
-            se = sd(beta_vix) / sqrt(n()),
-            n  = n(), .groups = "drop")
+# ── Regressions ───────────────────────────────────────────────────────────────
 
-fig_e1_groups <- vix_group %>%
-  ggplot(aes(x = reorder(group, mu), y = mu, fill = group)) +
-  geom_col(width = 0.5, alpha = 0.88) +
-  geom_errorbar(aes(ymin = mu - 1.96*se, ymax = mu + 1.96*se),
-                width = 0.18, linewidth = 0.55, colour = "grey25") +
-  geom_hline(yintercept = 0, linewidth = 0.5, colour = "grey20") +
-  geom_text(aes(label = paste0("n=", n), y = mu + sign(mu) * 0.015),
-            size = 3, colour = "grey30", vjust = -0.3) +
-  scale_fill_manual(
-    values = c("Safe haven" = col_blue, "OPEC" = col_red,
-               "HIPC" = "grey55", "Other" = "grey78"),
-    guide = "none") +
-  labs(
-    title    = "Extension 1 — VIX Beta by Country Group",
-    subtitle = paste0("Mean country-level OLS beta on \u0394log(VIX), 1990\u2013",
-                      y_ext_end, ". Error bars: 95% CI of the group mean."),
-    x = NULL, y = "Mean VIX beta") +
-  theme_paper
-
-save_fig(fig_e1_groups, "E1b_vix_beta_groups", part = "part_III", w = 6.5, h = 4.5)
-
-# ── Table E1 — Panel regressions ───────────────────────────────────────────────
-#
-# Five specifications increasing in fixed effects. The critical column is (5):
-# year FE absorb the aggregate VIX shock, so only the within-year differential
-# response of safe havens vs. other countries is identified. If the interaction
-# is positive and significant there, H&S's insurance mechanism is genuinely
-# countercyclical and not just a cross-sectional regularity.
-
-d_e1 <- panel_vix %>%
-  filter(iso3c %in% countries_79,
-         !is.na(dm_exp_flow_gdp), !is.na(d_log_vix),
-         !is.na(fdi_assets_gdp),  !is.na(fdi_liab_gdp))
-
-t_e1 <- list(
-  "(1)"           = fixest::feols(
-    dm_exp_flow_gdp ~ d_log_vix + fdi_liab_gdp + fdi_assets_gdp,
-    data = d_e1, vcov = "hetero"),
-  "(2) Interact." = fixest::feols(
-    dm_exp_flow_gdp ~ d_log_vix + vix_x_safe + vix_x_opec +
-      fdi_liab_gdp + fdi_assets_gdp,
-    data = d_e1, vcov = "hetero"),
-  "(3) FE"        = fixest::feols(
-    dm_exp_flow_gdp ~ d_log_vix + fdi_liab_gdp + fdi_assets_gdp | iso3c,
-    data = d_e1, vcov = ~iso3c),
-  "(4) FE+Int."   = fixest::feols(
-    dm_exp_flow_gdp ~ d_log_vix + vix_x_safe + vix_x_opec +
-      fdi_liab_gdp + fdi_assets_gdp | iso3c,
-    data = d_e1, vcov = ~iso3c),
-  "(5) Two-way"   = fixest::feols(
-    dm_exp_flow_gdp ~ vix_x_safe + vix_x_opec +
-      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
-    data = d_e1, vcov = ~iso3c)
+p3_e1_models <- list(
+  "(1) Baseline" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp,
+    data = p3_e1_data
+  ),
+  
+  "(2) R&D only" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
+      z_rnd_avg,
+    data = filter(p3_e1_data, !is.na(z_rnd_avg))
+  ),
+  
+  "(3) Intangibles" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
+      intang_idx,
+    data = filter(p3_e1_data, !is.na(intang_idx))
+  ),
+  
+  "(4) R&D + Intang." = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
+      z_rnd_avg + intang_idx,
+    data = filter(p3_e1_data, !is.na(z_rnd_avg), !is.na(intang_idx))
+  ),
+  
+  "(5) Industrial" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
+      intang_idx,
+    data = filter(p3_e1_data, iso3c %in% industrial, !is.na(intang_idx))
+  )
 )
 
-fe_rows_e1 <- tribble(
-  ~term,         ~`(1)`, ~`(2) Interact.`, ~`(3) FE`, ~`(4) FE+Int.`, ~`(5) Two-way`,
-  "Country FE",  "No",   "No",             "Yes",     "Yes",          "Yes",
-  "Year FE",     "No",   "No",             "No",      "No",           "Yes")
-attr(fe_rows_e1, "position") <- c(9, 10)
+print(sapply(p3_e1_models, nobs))
 
-tex_e1 <- modelsummary(
-  t_e1,
-  stars       = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
-  fmt         = "%.4f",
-  gof_omit    = "AIC|BIC|Log|Adj|Within|RMSE",
-  add_rows    = fe_rows_e1,
+p3_e1_tex <- modelsummary(
+  p3_e1_models,
+  stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt = "%.3f",
+  gof_omit = "AIC|BIC|Log|F|RMSE",
   coef_rename = c(
-    "d_log_vix"      = "$\\Delta\\log(\\text{VIX})$",
-    "vix_x_safe"     = "$\\Delta\\log(\\text{VIX})\\times\\text{Safe haven}$",
-    "vix_x_opec"     = "$\\Delta\\log(\\text{VIX})\\times\\text{OPEC}$",
-    "fdi_liab_gdp"   = "FDI liabilities / GDP",
-    "fdi_assets_gdp" = "FDI assets / GDP"),
-  output = "latex_tabular")
+    "fdi_assets_ratio" = "FDI assets / GDP",
+    "fdi_liab_ratio"   = "FDI liabilities / GDP",
+    "output_vol_hp"    = "Output volatility (HP)",
+    "z_rnd_avg"        = "R\\&D intensity (std.)",
+    "intang_idx"       = "Intangible intensity (std.)"
+  ),
+  output = "latex_tabular"
+)
 
-tex_e1_wrapped <- paste0(
+p3_e1_tex_wrapped <- paste0(
   "\\begin{table}[htbp]\n\\centering\n",
-  "\\caption{Extension 1 --- The Safe-Asset Cycle: VIX Sensitivity of Dark Matter Exports (",
-  "1990--", y_ext_end, ")}\n",
-  "\\label{tab:E1_vix}\n\\scriptsize\n",
-  tex_e1, "\n",
+  "\\caption{Extension 1 --- R\\&D, Intangible Capital and Dark Matter (",
+  y_ext_start, "--", y_ext_end, ")}\n",
+  "\\label{tab:p3_e1_intangibles}\n\\scriptsize\n",
+  p3_e1_tex, "\n",
   "\\begin{minipage}{0.95\\linewidth}\n",
-  "\\footnotesize Notes: Dependent variable: annual dark matter exports divided by GDP. ",
-  "Safe-haven countries: USA, CHE, DEU, GBR, JPN, NLD, AUT, DNK, NOR (Maggiori 2017). ",
-  "Columns (1)--(2): heteroskedasticity-robust standard errors. ",
-  "Columns (3)--(5): standard errors clustered by country. ",
-  "In column (5), year fixed effects absorb the aggregate VIX level, ",
-  "so only the differential response of safe havens relative to other countries is identified. ",
-  "A positive and significant interaction confirms that H\\&S's insurance mechanism ",
-  "is countercyclical, not merely a cross-sectional regularity. ",
+  "\\footnotesize Notes: Dependent variable: cumulative dark matter exports over ",
+  y_ext_start, "--", y_ext_end, ", divided by end-year GDP. ",
+  "The intangible index is the row mean of four standardised components: ",
+  "R\\&D/GDP, log resident patent applications, log high-technology export share, ",
+  "and log ICT service exports. At least two components are required per country-year. ",
+  "All variables winsorised at the 1\\% level. ",
   "* p$<$0.10, ** p$<$0.05, *** p$<$0.01.\n",
   "\\end{minipage}\n\\end{table}"
 )
 
-compile_table(tex_e1_wrapped, "tableE1_vix_panel",
-              part = "part_III", landscape = TRUE, table_number = 1, fit_width = TRUE)
+compile_table(
+  p3_e1_tex_wrapped,
+  "p3_table_E1_intangibles",
+  part = "part_III",
+  landscape = FALSE,
+  table_number = 1,
+  fit_width = TRUE
+)
+
+# ── Figure: intangible intensity vs dark matter exports ───────────────────────
+
+p3_e1_fig <- p3_e1_data %>%
+  filter(!is.na(intang_idx)) %>%
+  mutate(
+    grp = case_when(
+      iso3c %in% safe_havens ~ "Safe haven",
+      iso3c %in% industrial  ~ "Other industrial",
+      TRUE                   ~ "Developing"
+    )
+  ) %>%
+  ggplot(aes(x = intang_idx, y = dm_exp_ratio, label = iso3c)) +
+  geom_hline(yintercept = 0, colour = col_grey, linewidth = 0.4) +
+  geom_vline(xintercept = 0, colour = col_grey, linewidth = 0.4, linetype = "dashed") +
+  geom_smooth(
+    method = "lm", se = TRUE, colour = col_red,
+    linewidth = 0.9, fill = col_red, alpha = 0.08
+  ) +
+  geom_point(aes(colour = grp, size = grp), alpha = 0.82) +
+  geom_text_repel(
+    aes(colour = grp), size = 2.4,
+    segment.colour = "grey70", segment.size = 0.3,
+    box.padding = 0.3, max.overlaps = 25, seed = 42
+  ) +
+  scale_colour_manual(
+    values = c(
+      "Safe haven" = col_blue,
+      "Other industrial" = col_red,
+      "Developing" = "grey55"
+    ),
+    name = NULL
+  ) +
+  scale_size_manual(
+    values = c("Safe haven" = 2.8, "Other industrial" = 2.2, "Developing" = 1.6),
+    guide = "none"
+  ) +
+  labs(
+    title = "Extension 1 — Intangible Capital Intensity vs. Dark Matter Exports",
+    subtitle = paste0(
+      "Cross-section, ", y_ext_start, "\u2013", y_ext_end,
+      ". Index = mean z-score of R&D, patents, high-tech exports and ICT exports."
+    ),
+    x = "Composite intangible intensity (standardised)",
+    y = "Cumulative dark matter exports / end-year GDP"
+  ) +
+  theme_paper +
+  theme(legend.position = "bottom")
+
+save_fig(
+  p3_e1_fig,
+  "p3_fig_E1_intangibles_scatter",
+  part = "part_III",
+  w = 9,
+  h = 6.5
+)
 
 message("  Extension 1 done.")
 
 
 # ==============================================================================
 #
-# Extension 1b — Financial vs. Geopolitical Risk: VIX vs. GPR Horse Race
+# Extension 2a — Safe-Asset Cycle, VIX, H&S 5% Method
 #
-# The VIX picks up financial market volatility — option-implied uncertainty
-# about near-term US equity returns. But safe-haven status may reflect
-# something broader: political stability and the perception that a country
-# will remain a reliable counterparty even in times of geopolitical stress.
+# Baseline version. The dependent variable is the annual dark matter export flow
+# already built in panel_ext:
 #
-# To distinguish these two channels we use the Geopolitical Risk Index
-# (Caldara & Iacoviello 2022, AER P&P), constructed from automated text
-# searches in 10 major English-language newspapers since 1985. The GPR rises
-# during wars, terrorist attacks and interstate tensions even when financial
-# markets are calm — think of the Crimea annexation in 2014 or North Korea's
-# missile tests in 2017, periods when the VIX barely moved.
-#
-# We run a horse race: include both ΔlogVIX and ΔlogGPR interacted with
-# safe-haven and OPEC dummies, with two-way fixed effects throughout.
-# If both interactions are positive for safe havens, the premium is driven
-# by both financial and geopolitical safety. If only one survives, we can
-# attribute the dark matter mechanism more precisely.
-#
-# Data: gpr_web_latest.xlsx — sheet "GPR", column "GPR", monthly 1985–2021.
-#       We use the main GPR series (threats + acts, all newspaper sources).
+#   NFA_DM = NII / 0.05
+#   DM exports = ΔNFA_DM - official CA
 #
 # ==============================================================================
 
-message("\n── Extension 1b: VIX vs. GPR Horse Race ─────────────────────────────────")
+message("\n── Part III / Extension 2a: VIX, H&S 5% Method ─────────────────────────")
 
-# ── Load and aggregate GPR ────────────────────────────────────────────────────
+# ── Load and annualise VIX ─────────────────────────────────────────────────────
 
-gpr_raw <- read_excel(
+p3_e2a_vix_raw <- read_csv(
+  here("code", "data", "vix_daily.csv"),
+  show_col_types = FALSE
+)
+
+p3_e2a_date_col <- intersect(
+  c("DATE", "Date", "date", "observation_date"),
+  names(p3_e2a_vix_raw)
+)[1]
+
+if (is.na(p3_e2a_date_col)) {
+  stop("Could not identify a date column in vix_daily.csv.")
+}
+
+p3_e2a_value_col <- setdiff(names(p3_e2a_vix_raw), p3_e2a_date_col)[1]
+
+p3_e2a_vix_annual <- p3_e2a_vix_raw %>%
+  transmute(
+    date = as.Date(.data[[p3_e2a_date_col]]),
+    vix  = suppressWarnings(as.numeric(na_if(as.character(.data[[p3_e2a_value_col]]), ".")))
+  ) %>%
+  filter(!is.na(date), !is.na(vix), vix > 0) %>%
+  mutate(year = as.integer(format(date, "%Y"))) %>%
+  filter(year >= 1990, year <= y_ext_end) %>%
+  group_by(year) %>%
+  summarise(vix = mean(vix, na.rm = TRUE), .groups = "drop") %>%
+  arrange(year) %>%
+  mutate(d_log_vix = c(NA_real_, diff(log(vix))))
+
+# ── Merge VIX into H&S 5% panel ───────────────────────────────────────────────
+
+p3_e2a_panel_vix_5pct <- panel_ext %>%
+  filter(year >= 1990, year <= y_ext_end) %>%
+  left_join(p3_e2a_vix_annual, by = "year") %>%
+  mutate(
+    safe_d     = as.integer(iso3c %in% safe_havens),
+    vix_x_safe = d_log_vix * safe_d,
+    vix_x_opec = d_log_vix * opec_d
+  )
+
+p3_e2a_data <- p3_e2a_panel_vix_5pct %>%
+  filter(
+    iso3c %in% countries_79,
+    !is.na(dm_exp_flow_gdp),
+    !is.na(d_log_vix),
+    !is.na(fdi_assets_gdp),
+    !is.na(fdi_liab_gdp)
+  )
+
+message(sprintf(
+  "  E2a sample: %d obs, %d countries",
+  nrow(p3_e2a_data), n_distinct(p3_e2a_data$iso3c)
+))
+
+# ── Regressions ───────────────────────────────────────────────────────────────
+
+p3_e2a_models <- list(
+  "(1)" = fixest::feols(
+    dm_exp_flow_gdp ~ d_log_vix + fdi_liab_gdp + fdi_assets_gdp,
+    data = p3_e2a_data,
+    vcov = "hetero"
+  ),
+  
+  "(2) Interact." = fixest::feols(
+    dm_exp_flow_gdp ~ d_log_vix + vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp,
+    data = p3_e2a_data,
+    vcov = "hetero"
+  ),
+  
+  "(3) FE" = fixest::feols(
+    dm_exp_flow_gdp ~ d_log_vix + fdi_liab_gdp + fdi_assets_gdp | iso3c,
+    data = p3_e2a_data,
+    vcov = ~iso3c
+  ),
+  
+  "(4) FE+Int." = fixest::feols(
+    dm_exp_flow_gdp ~ d_log_vix + vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c,
+    data = p3_e2a_data,
+    vcov = ~iso3c
+  ),
+  
+  "(5) Two-way" = fixest::feols(
+    dm_exp_flow_gdp ~ vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = p3_e2a_data,
+    vcov = ~iso3c
+  )
+)
+
+p3_e2a_fe_rows <- tribble(
+  ~term,         ~`(1)`, ~`(2) Interact.`, ~`(3) FE`, ~`(4) FE+Int.`, ~`(5) Two-way`,
+  "Country FE",  "No",   "No",             "Yes",     "Yes",          "Yes",
+  "Year FE",     "No",   "No",             "No",      "No",           "Yes"
+)
+attr(p3_e2a_fe_rows, "position") <- c(9, 10)
+
+p3_e2a_tex <- modelsummary(
+  p3_e2a_models,
+  stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt = "%.4f",
+  gof_omit = "AIC|BIC|Log|Adj|Within|RMSE",
+  add_rows = p3_e2a_fe_rows,
+  coef_rename = c(
+    "d_log_vix"      = "$\\Delta\\log(\\mathrm{VIX})$",
+    "vix_x_safe"     = "$\\Delta\\log(\\mathrm{VIX})\\times\\mathrm{Safe\\ haven}$",
+    "vix_x_opec"     = "$\\Delta\\log(\\mathrm{VIX})\\times\\mathrm{OPEC}$",
+    "fdi_liab_gdp"   = "FDI liabilities / GDP",
+    "fdi_assets_gdp" = "FDI assets / GDP"
+  ),
+  output = "latex_tabular"
+)
+
+p3_e2a_tex_wrapped <- paste0(
+  "\\begin{table}[htbp]\n\\centering\n",
+  "\\caption{Extension 2a --- VIX Sensitivity of Dark Matter Exports: H\\&S 5\\% Method (",
+  "1990--", y_ext_end, ")}\n",
+  "\\label{tab:p3_e2a_vix_5pct}\n\\scriptsize\n",
+  p3_e2a_tex, "\n",
+  "\\begin{minipage}{0.95\\linewidth}\n",
+  "\\footnotesize Notes: Dependent variable: annual dark matter exports divided by GDP, ",
+  "computed with the original H\\&S assumption $NFA^{DM}=NII/0.05$. ",
+  "Safe-haven countries: USA, CHE, DEU, GBR, JPN, NLD, AUT, DNK, NOR. ",
+  "Columns (1)--(2): heteroskedasticity-robust standard errors. ",
+  "Columns (3)--(5): standard errors clustered by country. ",
+  "In column (5), year fixed effects absorb the aggregate VIX level. ",
+  "* p$<$0.10, ** p$<$0.05, *** p$<$0.01.\n",
+  "\\end{minipage}\n\\end{table}"
+)
+
+compile_table(
+  p3_e2a_tex_wrapped,
+  "p3_table_E2a_vix_5pct",
+  part = "part_III",
+  landscape = TRUE,
+  table_number = 2,
+  fit_width = TRUE
+)
+
+message("  Extension 2a done.")
+
+
+# ==============================================================================
+#
+# Extension 2b — Safe-Asset Cycle, VIX, Component-Specific Method
+#
+# This repeats the VIX exercise using the Part II Section 2 method.
+# We compute annual implied CA from the change in component-specific NFA:
+#
+#   NFA_A = NFA_FDI_A + NFA_equity_A + NFA_debt_A + NFA_other_A
+#   CA_DM_A = ΔNFA_A
+#   DM exports_A = CA_DM_A - official CA
+#
+# Same for Scenario B.
+#
+# ==============================================================================
+
+message("\n── Part III / Extension 2b: VIX, Component-Specific Method ─────────────")
+
+# ── Build annual component-specific DM export flows ───────────────────────────
+
+p3_e2b_component_flows <- nfa_decomp %>%
+  filter(year >= 1990, year <= y_ext_end) %>%
+  left_join(
+    panel_ext %>%
+      select(
+        iso3c, year,
+        ca_usd,
+        fdi_assets_gdp, fdi_liab_gdp,
+        opec_d, hipc_d
+      ),
+    by = c("iso3c", "year")
+  ) %>%
+  arrange(iso3c, year) %>%
+  mutate(
+    nfa_total_A = coalesce(nfa_fdi_A, 0) +
+      coalesce(nfa_equity_A, 0) +
+      coalesce(nfa_debt_A, 0) +
+      coalesce(nfa_other_A, 0),
+    
+    nfa_total_B = coalesce(nfa_fdi_B, 0) +
+      coalesce(nfa_equity_B, 0) +
+      coalesce(nfa_debt_B, 0) +
+      coalesce(nfa_other_B, 0),
+    
+    n_comp_A = rowSums(!is.na(across(c(nfa_fdi_A, nfa_equity_A, nfa_debt_A, nfa_other_A)))),
+    n_comp_B = rowSums(!is.na(across(c(nfa_fdi_B, nfa_equity_B, nfa_debt_B, nfa_other_B)))),
+    
+    nfa_total_A = if_else(n_comp_A > 0, nfa_total_A, NA_real_),
+    nfa_total_B = if_else(n_comp_B > 0, nfa_total_B, NA_real_)
+  ) %>%
+  group_by(iso3c) %>%
+  mutate(
+    ca_dm_A = nfa_total_A - dplyr::lag(nfa_total_A),
+    ca_dm_B = nfa_total_B - dplyr::lag(nfa_total_B),
+    
+    dm_exp_flow_A     = ca_dm_A - ca_usd,
+    dm_exp_flow_B     = ca_dm_B - ca_usd,
+    dm_exp_flow_A_gdp = dm_exp_flow_A / gdp_usd * 100,
+    dm_exp_flow_B_gdp = dm_exp_flow_B / gdp_usd * 100
+  ) %>%
+  ungroup()
+
+# ── Merge VIX ─────────────────────────────────────────────────────────────────
+
+p3_e2b_panel_vix_component <- p3_e2b_component_flows %>%
+  left_join(p3_e2a_vix_annual, by = "year") %>%
+  mutate(
+    safe_d     = as.integer(iso3c %in% safe_havens),
+    vix_x_safe = d_log_vix * safe_d,
+    vix_x_opec = d_log_vix * opec_d
+  )
+
+p3_e2b_data <- p3_e2b_panel_vix_component %>%
+  filter(
+    iso3c %in% countries_79,
+    !is.na(d_log_vix),
+    !is.na(fdi_assets_gdp),
+    !is.na(fdi_liab_gdp),
+    !is.na(dm_exp_flow_A_gdp),
+    !is.na(dm_exp_flow_B_gdp)
+  )
+
+message(sprintf(
+  "  E2b sample: %d obs, %d countries",
+  nrow(p3_e2b_data), n_distinct(p3_e2b_data$iso3c)
+))
+
+# ── Regressions ───────────────────────────────────────────────────────────────
+
+p3_e2b_models <- list(
+  "(1) A: pooled" = fixest::feols(
+    dm_exp_flow_A_gdp ~ d_log_vix + vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp,
+    data = p3_e2b_data,
+    vcov = "hetero"
+  ),
+  
+  "(2) A: country FE" = fixest::feols(
+    dm_exp_flow_A_gdp ~ d_log_vix + vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c,
+    data = p3_e2b_data,
+    vcov = ~iso3c
+  ),
+  
+  "(3) A: two-way FE" = fixest::feols(
+    dm_exp_flow_A_gdp ~ vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = p3_e2b_data,
+    vcov = ~iso3c
+  ),
+  
+  "(4) B: two-way FE" = fixest::feols(
+    dm_exp_flow_B_gdp ~ vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = p3_e2b_data,
+    vcov = ~iso3c
+  )
+)
+
+p3_e2b_fe_rows <- tribble(
+  ~term,         ~`(1) A: pooled`, ~`(2) A: country FE`, ~`(3) A: two-way FE`, ~`(4) B: two-way FE`,
+  "Country FE",  "No",             "Yes",                "Yes",               "Yes",
+  "Year FE",     "No",             "No",                 "Yes",               "Yes"
+)
+attr(p3_e2b_fe_rows, "position") <- c(9, 10)
+
+p3_e2b_tex <- modelsummary(
+  p3_e2b_models,
+  stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt = "%.4f",
+  gof_omit = "AIC|BIC|Log|Adj|Within|RMSE",
+  add_rows = p3_e2b_fe_rows,
+  coef_rename = c(
+    "d_log_vix"      = "$\\Delta\\log(\\mathrm{VIX})$",
+    "vix_x_safe"     = "$\\Delta\\log(\\mathrm{VIX})\\times\\mathrm{Safe\\ haven}$",
+    "vix_x_opec"     = "$\\Delta\\log(\\mathrm{VIX})\\times\\mathrm{OPEC}$",
+    "fdi_liab_gdp"   = "FDI liabilities / GDP",
+    "fdi_assets_gdp" = "FDI assets / GDP"
+  ),
+  output = "latex_tabular"
+)
+
+p3_e2b_tex_wrapped <- paste0(
+  "\\begin{table}[htbp]\n\\centering\n",
+  "\\caption{Extension 2b --- VIX Sensitivity of Dark Matter Exports: Component-Specific Method (",
+  "1990--", y_ext_end, ")}\n",
+  "\\label{tab:p3_e2b_vix_component}\n\\scriptsize\n",
+  p3_e2b_tex, "\n",
+  "\\begin{minipage}{0.95\\linewidth}\n",
+  "\\footnotesize Notes: Dependent variable: annual dark matter exports divided by GDP. ",
+  "Columns (1)--(3) use Scenario A from Part II Section 2; column (4) uses Scenario B. ",
+  "The component-specific method capitalises each NII component using asset-class-specific ",
+  "discount rates, then computes annual implied CA from the change in component-specific NFA. ",
+  "In two-way FE columns, year fixed effects absorb the aggregate VIX level. ",
+  "Standard errors clustered by country where fixed effects are used. ",
+  "* p$<$0.10, ** p$<$0.05, *** p$<$0.01.\n",
+  "\\end{minipage}\n\\end{table}"
+)
+
+compile_table(
+  p3_e2b_tex_wrapped,
+  "p3_table_E2b_vix_component_method",
+  part = "part_III",
+  landscape = TRUE,
+  table_number = 3,
+  fit_width = TRUE
+)
+
+message("  Extension 2b done.")
+
+
+# ==============================================================================
+#
+# Extension 2c — Financial vs. Geopolitical Risk: VIX vs. GPR
+#
+# This remains based on the H&S 5% flow, to keep the horse race simple:
+# VIX captures financial volatility; GPR captures geopolitical risk.
+#
+# ==============================================================================
+
+message("\n── Part III / Extension 2c: VIX vs. GPR Horse Race ─────────────────────")
+
+# ── Load and annualise GPR ─────────────────────────────────────────────────────
+
+p3_e2c_gpr_raw <- read_excel(
   here("code", "data", "gpr_web_latest.xlsx"),
   sheet = "GPR"
 )
 
-gpr_annual <- gpr_raw %>%
+if (!inherits(p3_e2c_gpr_raw$Date, "Date")) {
+  p3_e2c_gpr_raw <- p3_e2c_gpr_raw %>%
+    mutate(Date = as.Date(as.numeric(Date), origin = "1899-12-30"))
+}
+
+p3_e2c_gpr_annual <- p3_e2c_gpr_raw %>%
   mutate(
-    Date = as.Date(as.numeric(Date), origin = "1899-12-30"),
     year = as.integer(format(Date, "%Y")),
     gpr  = suppressWarnings(as.numeric(GPR))
   ) %>%
@@ -3124,54 +3635,64 @@ gpr_annual <- gpr_raw %>%
   arrange(year) %>%
   mutate(d_log_gpr = c(NA_real_, diff(log(gpr))))
 
-message(sprintf("  GPR: %d annual obs (%d–%d)",
-                nrow(gpr_annual), min(gpr_annual$year), max(gpr_annual$year)))
+# ── Merge VIX and GPR into 5% panel ───────────────────────────────────────────
 
-# ── Merge VIX and GPR into the panel ─────────────────────────────────────────
-
-panel_gpr <- panel_vix %>%
-  left_join(gpr_annual, by = "year") %>%
+p3_e2c_panel_gpr <- p3_e2a_panel_vix_5pct %>%
+  left_join(p3_e2c_gpr_annual, by = "year") %>%
   mutate(
     gpr_x_safe = d_log_gpr * safe_d,
     gpr_x_opec = d_log_gpr * opec_d
   )
 
-d_e1b <- panel_gpr %>%
-  filter(iso3c %in% countries_79,
-         !is.na(dm_exp_flow_gdp),
-         !is.na(d_log_vix), !is.na(d_log_gpr),
-         !is.na(fdi_liab_gdp), !is.na(fdi_assets_gdp))
+p3_e2c_data <- p3_e2c_panel_gpr %>%
+  filter(
+    iso3c %in% countries_79,
+    !is.na(dm_exp_flow_gdp),
+    !is.na(d_log_vix),
+    !is.na(d_log_gpr),
+    !is.na(fdi_liab_gdp),
+    !is.na(fdi_assets_gdp)
+  )
 
-message(sprintf("  E1b sample: %d obs, %d countries",
-                nrow(d_e1b), n_distinct(d_e1b$iso3c)))
+message(sprintf(
+  "  E2c sample: %d obs, %d countries",
+  nrow(p3_e2c_data), n_distinct(p3_e2c_data$iso3c)
+))
 
-# ── Figure E1b — VIX vs GPR: showing when they diverge ───────────────────────
-#
-# We z-standardise both series so they are on the same scale.
-# The divergence periods (2013-2019) are where geopolitical risk rises
-# while financial markets stay calm — exactly where the two channels
-# can be separately identified.
+# ── Figure: VIX vs GPR time series ────────────────────────────────────────────
 
-fig_e1b_ts <- vix_annual %>%
-  left_join(gpr_annual, by = "year") %>%
+p3_e2c_fig_ts <- p3_e2a_vix_annual %>%
+  left_join(p3_e2c_gpr_annual, by = "year") %>%
   filter(!is.na(vix), !is.na(gpr)) %>%
-  mutate(vix_std = as.numeric(scale(vix)),
-         gpr_std = as.numeric(scale(gpr))) %>%
+  mutate(
+    vix_std = z_std(vix),
+    gpr_std = z_std(gpr)
+  ) %>%
   pivot_longer(c(vix_std, gpr_std), names_to = "index", values_to = "value") %>%
-  mutate(index = recode(index,
-                        "vix_std" = "VIX (financial volatility)",
-                        "gpr_std" = "GPR (geopolitical risk)")) %>%
+  mutate(
+    index = recode(
+      index,
+      "vix_std" = "VIX (financial volatility)",
+      "gpr_std" = "GPR (geopolitical risk)"
+    )
+  ) %>%
   ggplot(aes(x = year, y = value, colour = index, linetype = index)) +
   geom_hline(yintercept = 0, colour = col_grey, linewidth = 0.4) +
   geom_line(linewidth = 1.0, alpha = 0.9) +
   scale_colour_manual(
-    values = c("VIX (financial volatility)" = col_blue,
-               "GPR (geopolitical risk)"    = col_red),
-    name = NULL) +
+    values = c(
+      "VIX (financial volatility)" = col_blue,
+      "GPR (geopolitical risk)" = col_red
+    ),
+    name = NULL
+  ) +
   scale_linetype_manual(
-    values = c("VIX (financial volatility)" = "solid",
-               "GPR (geopolitical risk)"    = "dashed"),
-    name = NULL) +
+    values = c(
+      "VIX (financial volatility)" = "solid",
+      "GPR (geopolitical risk)" = "dashed"
+    ),
+    name = NULL
+  ) +
   annotate("text", x = 2001.5, y = 3.1, label = "9/11",
            size = 2.8, colour = col_grey, fontface = "italic") +
   annotate("text", x = 2008.8, y = 3.5, label = "GFC",
@@ -3180,367 +3701,219 @@ fig_e1b_ts <- vix_annual %>%
            size = 2.8, colour = col_grey, fontface = "italic") +
   scale_x_continuous(breaks = seq(1990, y_ext_end, 4)) +
   labs(
-    title    = "Extension 1b — VIX vs. GPR: Complementary Risk Measures (1990\u2013present)",
-    subtitle = paste0("Both series z-standardised. Divergence periods (e.g. 2013\u20132019) ",
-                      "allow separate identification of financial and geopolitical safe-haven premia."),
-    x = NULL, y = "Standardised index (z-score)") +
-  theme_paper + theme(legend.position = "bottom")
+    title = "Extension 2c — VIX vs. GPR: Complementary Risk Measures",
+    subtitle = "Both series z-standardised. Divergence periods help separate financial and geopolitical safety premia.",
+    x = NULL,
+    y = "Standardised index (z-score)"
+  ) +
+  theme_paper +
+  theme(legend.position = "bottom")
 
-save_fig(fig_e1b_ts, "E1b_vix_vs_gpr_timeseries", part = "part_III", w = 10, h = 5)
-
-# ── Table E1b — Horse race with two-way FE throughout ─────────────────────────
-#
-# All columns absorb country and year fixed effects. Column (3) is the key
-# specification: both VIX and GPR interactions are included jointly, so each
-# coefficient captures the marginal contribution of one type of risk holding
-# the other constant. Column (4) excludes OPEC countries as a robustness check.
-
-t_e1b <- list(
-  "(1) VIX"        = fixest::feols(
-    dm_exp_flow_gdp ~ vix_x_safe + vix_x_opec + fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
-    data = d_e1b, vcov = ~iso3c),
-  "(2) GPR"        = fixest::feols(
-    dm_exp_flow_gdp ~ gpr_x_safe + gpr_x_opec + fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
-    data = d_e1b, vcov = ~iso3c),
-  "(3) VIX + GPR"  = fixest::feols(
-    dm_exp_flow_gdp ~ vix_x_safe + gpr_x_safe + vix_x_opec + gpr_x_opec +
-      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
-    data = d_e1b, vcov = ~iso3c),
-  "(4) OPEC excl." = fixest::feols(
-    dm_exp_flow_gdp ~ vix_x_safe + gpr_x_safe + fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
-    data = filter(d_e1b, opec_d == 0), vcov = ~iso3c)
+save_fig(
+  p3_e2c_fig_ts,
+  "p3_fig_E2c_vix_vs_gpr_timeseries",
+  part = "part_III",
+  w = 10,
+  h = 5
 )
 
-fe_rows_e1b <- tribble(
+# ── Horse-race regressions ────────────────────────────────────────────────────
+
+p3_e2c_models <- list(
+  "(1) VIX" = fixest::feols(
+    dm_exp_flow_gdp ~ vix_x_safe + vix_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = p3_e2c_data,
+    vcov = ~iso3c
+  ),
+  
+  "(2) GPR" = fixest::feols(
+    dm_exp_flow_gdp ~ gpr_x_safe + gpr_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = p3_e2c_data,
+    vcov = ~iso3c
+  ),
+  
+  "(3) VIX + GPR" = fixest::feols(
+    dm_exp_flow_gdp ~ vix_x_safe + gpr_x_safe +
+      vix_x_opec + gpr_x_opec +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = p3_e2c_data,
+    vcov = ~iso3c
+  ),
+  
+  "(4) OPEC excl." = fixest::feols(
+    dm_exp_flow_gdp ~ vix_x_safe + gpr_x_safe +
+      fdi_liab_gdp + fdi_assets_gdp | iso3c + year,
+    data = filter(p3_e2c_data, opec_d == 0),
+    vcov = ~iso3c
+  )
+)
+
+p3_e2c_fe_rows <- tribble(
   ~term,        ~`(1) VIX`, ~`(2) GPR`, ~`(3) VIX + GPR`, ~`(4) OPEC excl.`,
-  "Country FE", "Yes", "Yes", "Yes", "Yes",
-  "Year FE",    "Yes", "Yes", "Yes", "Yes")
-attr(fe_rows_e1b, "position") <- c(9, 10)
+  "Country FE", "Yes",      "Yes",      "Yes",             "Yes",
+  "Year FE",    "Yes",      "Yes",      "Yes",             "Yes"
+)
+attr(p3_e2c_fe_rows, "position") <- c(9, 10)
 
-tex_e1b <- modelsummary(
-  t_e1b,
-  stars       = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
-  fmt         = "%.4f",
-  gof_omit    = "AIC|BIC|Log|Adj|Within|RMSE",
-  add_rows    = fe_rows_e1b,
+p3_e2c_tex <- modelsummary(
+  p3_e2c_models,
+  stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt = "%.4f",
+  gof_omit = "AIC|BIC|Log|Adj|Within|RMSE",
+  add_rows = p3_e2c_fe_rows,
   coef_rename = c(
-    "vix_x_safe"     = "$\\Delta\\log(\\text{VIX})\\times\\text{Safe haven}$",
-    "gpr_x_safe"     = "$\\Delta\\log(\\text{GPR})\\times\\text{Safe haven}$",
-    "vix_x_opec"     = "$\\Delta\\log(\\text{VIX})\\times\\text{OPEC}$",
-    "gpr_x_opec"     = "$\\Delta\\log(\\text{GPR})\\times\\text{OPEC}$",
+    "vix_x_safe"     = "$\\Delta\\log(\\mathrm{VIX})\\times\\mathrm{Safe\\ haven}$",
+    "gpr_x_safe"     = "$\\Delta\\log(\\mathrm{GPR})\\times\\mathrm{Safe\\ haven}$",
+    "vix_x_opec"     = "$\\Delta\\log(\\mathrm{VIX})\\times\\mathrm{OPEC}$",
+    "gpr_x_opec"     = "$\\Delta\\log(\\mathrm{GPR})\\times\\mathrm{OPEC}$",
     "fdi_liab_gdp"   = "FDI liabilities / GDP",
-    "fdi_assets_gdp" = "FDI assets / GDP"),
-  output = "latex_tabular")
+    "fdi_assets_gdp" = "FDI assets / GDP"
+  ),
+  output = "latex_tabular"
+)
 
-tex_e1b_wrapped <- paste0(
+p3_e2c_tex_wrapped <- paste0(
   "\\begin{table}[htbp]\n\\centering\n",
-  "\\caption{Extension 1b --- Horse Race: VIX vs.~GPR as Drivers of Safe-Haven Dark Matter (",
+  "\\caption{Extension 2c --- Financial vs. Geopolitical Risk: VIX vs. GPR Horse Race (",
   "1990--", y_ext_end, ")}\n",
-  "\\label{tab:E1b_gpr}\n\\scriptsize\n",
-  tex_e1b, "\n",
+  "\\label{tab:p3_e2c_vix_gpr}\n\\scriptsize\n",
+  p3_e2c_tex, "\n",
   "\\begin{minipage}{0.95\\linewidth}\n",
-  "\\footnotesize Notes: All columns include country and year fixed effects. ",
-  "The aggregate VIX and GPR levels are absorbed by year dummies; ",
-  "only the differential response of each group to a common shock is identified. ",
-  "GPR = Caldara \\& Iacoviello (2022, AER P\\&P) Geopolitical Risk Index, ",
-  "constructed from automated text searches in 10 major English-language newspapers. ",
-  "If $\\Delta\\log(\\text{GPR})\\times\\text{Safe haven}$ is positive and significant ",
-  "after controlling for VIX, geopolitical safety generates a premium independently ",
-  "of financial market volatility. ",
+  "\\footnotesize Notes: Dependent variable: annual dark matter exports divided by GDP, ",
+  "computed with the H\\&S 5\\% method. All columns include country and year fixed effects. ",
+  "The aggregate VIX and GPR levels are absorbed by year dummies; only differential ",
+  "safe-haven and OPEC responses are identified. ",
+  "GPR = Caldara \\& Iacoviello Geopolitical Risk Index. ",
   "Standard errors clustered by country. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.\n",
   "\\end{minipage}\n\\end{table}"
 )
 
-compile_table(tex_e1b_wrapped, "tableE1b_vix_gpr",
-              part = "part_III", landscape = FALSE, table_number = 2, fit_width = TRUE)
+compile_table(
+  p3_e2c_tex_wrapped,
+  "p3_table_E2c_vix_gpr",
+  part = "part_III",
+  landscape = FALSE,
+  table_number = 4,
+  fit_width = TRUE
+)
 
-message("  Extension 1b done.")
+message("  Extension 2c done.")
 
 
 # ==============================================================================
 #
-# Extension 2 — Intangible Capital Intensity
+# Extension 3 — Financial Development and Safe Asset Production
 #
-# H&S include R&D expenditure as a share of GDP to capture their FDI-knowledge
-# channel: multinationals export blueprints and know-how through their foreign
-# affiliates, but this trade is not recorded in balance of payments statistics.
-# Countries that invest heavily in knowledge-based assets should therefore show
-# large dark matter exports as their unrecorded knowledge exports generate
-# income that official statistics attribute to the affiliate, not the parent.
-#
-# H&S find R&D insignificant and drop it. We argue the problem is the proxy:
-# Corrado, Hulten & Sichel (2009, RIW) show that R&D is only ~30% of total
-# intangible investment. Software, organisational capital, and brands matter
-# equally, and these are equally invisible in BoP statistics.
-#
-# We construct a composite index by z-standardising four WDI indicators:
-#   z1 = R&D expenditure / GDP           (H&S's original proxy)
-#   z2 = log(resident patent applications) (innovation output, not just input)
-#   z3 = log(high-tech exports / mfg)    (sectoral intensity of intangibles)
-#   z4 = log(ICT service exports)        (most BoP-invisible intangible category)
-# and taking the row mean of available components (at least 2 required).
-#
-# Data: WDI — downloaded once and cached locally as wdi_intangibles.csv.
+# Tests whether financially deeper economies are better able to produce safe,
+# liquid claims, which may generate a safe-asset premium and hence dark matter.
 #
 # ==============================================================================
 
-message("\n── Extension 2: Intangible Capital Intensity ────────────────────────────")
+message("\n── Part III / Extension 3: Financial Development ────────────────────────")
 
-# ── Load WDI intangibles (download once, cache locally) ───────────────────────
+# ── Load WDI financial development indicators ─────────────────────────────────
 
-wdi_int <- fetch_or_load_wdi(
-  filename   = "wdi_intangibles.csv",
-  indicators = c(rnd_gdp      = "GB.XPD.RSDV.GD.ZS",
-                 patents_res  = "IP.PAT.RESD",
-                 hitech_share = "TX.VAL.TECH.MF.ZS",
-                 ict_exports  = "BX.GSR.CCIS.ZS"),
-  start = 1980, end = y_ext_end
+p3_e3_wdi_findev <- fetch_or_load_wdi(
+  filename = "wdi_findev.csv",
+  indicators = c(
+    private_credit = "FS.AST.PRVT.GD.ZS",
+    stock_mktcap   = "CM.MKT.LCAP.GD.ZS"
+  ),
+  start = 1980,
+  end   = y_ext_end
 ) %>%
-  filter(!is.na(iso3c), year >= 1980)
+  filter(!is.na(iso3c), year >= 1980, year <= y_ext_end)
 
-# ── Build composite intangible index ─────────────────────────────────────────
+# ── Build financial development index ─────────────────────────────────────────
 
-intang_cs <- wdi_int %>%
+p3_e3_findev_cs <- p3_e3_wdi_findev %>%
   group_by(iso3c) %>%
   summarise(
-    rnd_avg = mean(rnd_gdp,      na.rm = TRUE),
-    pat_avg = mean(patents_res,  na.rm = TRUE),
-    hit_avg = mean(hitech_share, na.rm = TRUE),
-    ict_avg = mean(ict_exports,  na.rm = TRUE),
+    credit_avg = mean_or_na2(private_credit),
+    mktcap_avg = mean_or_na2(stock_mktcap),
     .groups = "drop"
   ) %>%
   mutate(
-    z_rnd = as.numeric(scale(rnd_avg)),
-    z_pat = as.numeric(scale(log1p(pat_avg))),
-    z_hit = as.numeric(scale(log1p(hit_avg))),
-    z_ict = as.numeric(scale(log1p(ict_avg)))
-  ) %>%
-  rowwise() %>%
-  mutate(
-    intang_idx = {
-      v <- c(z_rnd, z_pat, z_hit, z_ict)
-      if (sum(!is.na(v)) < 2) NA_real_ else mean(v, na.rm = TRUE)
-    }
-  ) %>%
-  ungroup()
+    z_credit  = z_std(log1p(coalesce(credit_avg, 0))),
+    z_mktcap  = z_std(log1p(coalesce(mktcap_avg, 0))),
+    findev_idx = rowMeans(cbind(z_credit, z_mktcap), na.rm = TRUE)
+  )
 
 # ── Cross-section regressions ─────────────────────────────────────────────────
-#
-# Column (1) replicates H&S's Table 3 baseline on the extended window.
-# Column (2) adds R&D alone — replicating their null result.
-# Column (3) substitutes the composite index — our main test.
-# Column (4) is a horse race between the two.
-# Column (5) restricts to industrial countries where intangible-intensive FDI
-# (pharma, software, finance) is most concentrated.
 
-cs_e2 <- cs_ext %>%
-  select(-any_of("rnd_avg")) %>%
-  left_join(
-    intang_cs %>% select(iso3c, rnd_avg, intang_idx),
-    by = "iso3c"
-  ) %>%
+p3_e3_cs <- cs_ext %>%
+  left_join(p3_e3_findev_cs, by = "iso3c") %>%
+  left_join(p3_e1_intangibles_cs %>% select(iso3c, intang_idx), by = "iso3c") %>%
   mutate(
     dm_exp_ratio     = dm_exp_gdp     / 100,
     fdi_assets_ratio = fdi_assets_gdp / 100,
     fdi_liab_ratio   = fdi_liab_gdp   / 100
   )
 
-d_e2 <- cs_e2 %>%
-  filter(iso3c %in% countries_79,
-         !is.na(dm_exp_ratio), !is.na(fdi_assets_ratio),
-         !is.na(fdi_liab_ratio), !is.na(output_vol_hp)) %>%
-  mutate(across(c(dm_exp_ratio, fdi_assets_ratio, fdi_liab_ratio,
-                  output_vol_hp, intang_idx, rnd_avg), winsor))
-
-
-
-t_e2 <- list(
-  "(1) Baseline"   = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp,
-                        data = d_e2),
-  "(2) + R\\&D"    = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
-                          rnd_avg, data = filter(d_e2, !is.na(rnd_avg))),
-  "(3) + Composite"= lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
-                          intang_idx, data = filter(d_e2, !is.na(intang_idx))),
-  "(4) Horse race" = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
-                          rnd_avg + intang_idx,
-                        data = filter(d_e2, !is.na(rnd_avg), !is.na(intang_idx))),
-  "(5) Industrial" = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
-                          intang_idx,
-                        data = filter(d_e2, iso3c %in% industrial, !is.na(intang_idx)))
-)
-
-print(sapply(t_e2, nobs))
-
-tex_e2 <- modelsummary(
-  t_e2,
-  stars       = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
-  fmt         = "%.3f",
-  gof_omit    = "AIC|BIC|Log|F|RMSE",
-  coef_rename = c(
-    "fdi_assets_ratio" = "FDI assets / GDP",
-    "fdi_liab_ratio"   = "FDI liabilities / GDP",
-    "output_vol_hp"    = "Output volatility (HP)",
-    "rnd_avg"          = "R\\&D / GDP",
-    "intang_idx"       = "Composite intangible index"),
-  output = "latex_tabular")
-
-tex_e2_wrapped <- paste0(
-  "\\begin{table}[htbp]\n\\centering\n",
-  "\\caption{Extension 2 --- Intangible Capital Intensity and Dark Matter (",
-  y_ext_start, "--", y_ext_end, ")}\n",
-  "\\label{tab:E2_intangibles}\n\\scriptsize\n",
-  tex_e2, "\n",
-  "\\begin{minipage}{0.95\\linewidth}\n",
-  "\\footnotesize Notes: Dependent variable: cumulative dark matter exports over ",
-  y_ext_start, "--", y_ext_end, ", divided by end-year GDP. ",
-  "The composite intangible index is the row mean of four z-standardised components: ",
-  "R\\&D/GDP, log resident patent applications, log high-technology export share, ",
-  "and log ICT service exports (at least two components required per country). ",
-  "Following Corrado, Hulten \\& Sichel (2009), R\\&D captures only $\\sim30\\%$ of ",
-  "total intangible investment; the composite index recovers the remainder. ",
-  "Column~(4): horse race between H\\&S's R\\&D proxy and the composite. ",
-  "Column~(5): restricted to industrial countries (Keller \\& Yeaple 2013). ",
-  "All variables winsorised at the 1\\% level. ",
-  "* p$<$0.10, ** p$<$0.05, *** p$<$0.01.\n",
-  "\\end{minipage}\n\\end{table}"
-)
-
-compile_table(tex_e2_wrapped, "tableE2_intangibles",
-              part = "part_III", landscape = FALSE, table_number = 3, fit_width = TRUE)
-
-# ── Figure E2 — Composite index vs. dark matter exports ───────────────────────
-
-fig_e2 <- d_e2 %>%
-  filter(!is.na(intang_idx)) %>%
-  mutate(grp = case_when(
-    iso3c %in% safe_havens ~ "Safe haven",
-    iso3c %in% industrial  ~ "Other industrial",
-    TRUE                   ~ "Developing")) %>%
-  ggplot(aes(x = intang_idx, y = dm_exp_ratio, label = iso3c)) +
-  geom_hline(yintercept = 0, colour = col_grey, linewidth = 0.4) +
-  geom_vline(xintercept = 0, colour = col_grey, linewidth = 0.4, linetype = "dashed") +
-  geom_smooth(method = "lm", se = TRUE, colour = col_red,
-              linewidth = 0.9, fill = col_red, alpha = 0.08) +
-  geom_point(aes(colour = grp, size = grp), alpha = 0.82) +
-  geom_text_repel(aes(colour = grp), size = 2.4,
-                  segment.colour = "grey70", segment.size = 0.3,
-                  box.padding = 0.3, max.overlaps = 25, seed = 42) +
-  scale_colour_manual(
-    values = c("Safe haven" = col_blue, "Other industrial" = col_red,
-               "Developing" = "grey55"), name = NULL) +
-  scale_size_manual(
-    values = c("Safe haven" = 2.8, "Other industrial" = 2.2, "Developing" = 1.6),
-    guide = "none") +
-  labs(
-    title    = "Extension 2 — Composite Intangible Index vs. Dark Matter Exports",
-    subtitle = paste0("Cross-section, ", y_ext_start, "\u2013", y_ext_end,
-                      ". Index = mean z-score of R&D, patents, high-tech and ICT exports."),
-    x = "Composite intangible intensity (standardised)",
-    y = "Cumulative dark matter exports / end-year GDP") +
-  theme_paper + theme(legend.position = "bottom")
-
-save_fig(fig_e2, "E2_intangible_scatter", part = "part_III", w = 9, h = 6.5)
-
-message("  Extension 2 done.")
-
-
-# ==============================================================================
-#
-# Extension 3 — Financial Development and Safe Asset Production Capacity
-#
-# H&S invoke Caballero, Farhi & Gourinchas (at the time a 2005 working paper,
-# published 2017 in QJE) as one theoretical rationale for the US exporting dark
-# matter: financially underdeveloped countries cannot write claims on their own
-# productive assets, forcing their savings into foreign securities. This demand
-# for foreign safe assets allows issuers — mainly the US — to borrow at below-
-# equilibrium rates. The return differential is what H&S capitalise as dark matter.
-#
-# H&S test this with a Rule of Law variable and find nothing. We argue the
-# right proxy is financial depth, not institutions: it is the ability to issue
-# liquid, transparent, deeply traded financial liabilities that confers the
-# safe-asset premium (He, Krishnamurthy & Milbradt 2019, AER).
-#
-# We use two WDI indicators averaged over the sample window:
-#   private credit / GDP     : depth of the banking sector
-#   stock market cap / GDP   : depth of equity markets
-# standardised and combined into a composite FinDev index.
-#
-# Data: WDI — downloaded once and cached locally as wdi_findev.csv.
-#
-# ==============================================================================
-
-message("\n── Extension 3: Financial Development ───────────────────────────────────")
-
-# ── Load WDI financial development (download once, cache locally) ─────────────
-
-wdi_fin <- fetch_or_load_wdi(
-  filename   = "wdi_findev.csv",
-  indicators = c(private_credit = "FS.AST.PRVT.GD.ZS",
-                 stock_mktcap   = "CM.MKT.LCAP.GD.ZS"),
-  start = 1980, end = y_ext_end
-) %>%
-  filter(!is.na(iso3c), year >= 1980)
-
-# ── Build composite financial development index ───────────────────────────────
-
-findev_cs <- wdi_fin %>%
-  group_by(iso3c) %>%
-  summarise(
-    credit_avg = mean(private_credit, na.rm = TRUE),
-    mktcap_avg = mean(stock_mktcap,   na.rm = TRUE),
-    .groups    = "drop"
+p3_e3_data <- p3_e3_cs %>%
+  filter(
+    iso3c %in% countries_79,
+    !is.na(dm_exp_ratio),
+    !is.na(fdi_assets_ratio),
+    !is.na(fdi_liab_ratio),
+    !is.na(output_vol_hp)
   ) %>%
   mutate(
-    z_credit = as.numeric(scale(log1p(credit_avg))),
-    z_mktcap = as.numeric(scale(log1p(mktcap_avg)))
-  ) %>%
-  rowwise() %>%
-  mutate(findev_idx = mean(c_across(c(z_credit, z_mktcap)), na.rm = TRUE)) %>%
-  ungroup()
+    across(
+      any_of(c(
+        "dm_exp_ratio", "fdi_assets_ratio", "fdi_liab_ratio",
+        "output_vol_hp", "z_credit", "z_mktcap", "findev_idx",
+        "intang_idx", "rule_of_law"
+      )),
+      winsor
+    )
+  )
 
-# ── Cross-section regressions ─────────────────────────────────────────────────
-#
-# We add the FinDev components progressively to show which dimension of
-# financial depth matters most. Column (5) is the kitchen-sink specification
-# stacking all three extensions, testing whether financial development has
-# incremental explanatory power beyond H&S's original channels.
-
-cs_e3 <- cs_ext %>%
-  left_join(findev_cs,                               by = "iso3c") %>%
-  left_join(intang_cs %>% select(iso3c, intang_idx), by = "iso3c") %>%
-  mutate(dm_exp_ratio     = dm_exp_gdp     / 100,
-         fdi_assets_ratio = fdi_assets_gdp / 100,
-         fdi_liab_ratio   = fdi_liab_gdp   / 100)
-
-d_e3 <- cs_e3 %>%
-  filter(iso3c %in% countries_79,
-         !is.na(dm_exp_ratio), !is.na(fdi_assets_ratio),
-         !is.na(fdi_liab_ratio), !is.na(output_vol_hp)) %>%
-  mutate(across(c(dm_exp_ratio, fdi_assets_ratio, fdi_liab_ratio,
-                  output_vol_hp, z_credit, z_mktcap, findev_idx, intang_idx), winsor))
-
-t_e3 <- list(
-  "(1) Baseline"    = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp,
-                         data = d_e3),
-  "(2) Credit"      = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
-                           z_credit, data = filter(d_e3, !is.na(z_credit))),
-  "(3) Mkt cap"     = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
-                           z_mktcap, data = filter(d_e3, !is.na(z_mktcap))),
-  "(4) FinDev idx"  = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
-                           findev_idx, data = filter(d_e3, !is.na(findev_idx))),
-  "(5) Full"        = lm(dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
-                           findev_idx + intang_idx + rule_of_law + opec + hipc,
-                         data = filter(d_e3, !is.na(findev_idx), !is.na(intang_idx),
-                                       !is.na(rule_of_law)))
+p3_e3_models <- list(
+  "(1) Baseline" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp,
+    data = p3_e3_data
+  ),
+  
+  "(2) Credit" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
+      z_credit,
+    data = filter(p3_e3_data, !is.na(z_credit))
+  ),
+  
+  "(3) Mkt cap" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
+      z_mktcap,
+    data = filter(p3_e3_data, !is.na(z_mktcap))
+  ),
+  
+  "(4) FinDev idx" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
+      findev_idx,
+    data = filter(p3_e3_data, !is.na(findev_idx))
+  ),
+  
+  "(5) Full" = lm(
+    dm_exp_ratio ~ fdi_assets_ratio + fdi_liab_ratio + output_vol_hp +
+      findev_idx + intang_idx + rule_of_law + opec + hipc,
+    data = filter(
+      p3_e3_data,
+      !is.na(findev_idx),
+      !is.na(intang_idx),
+      !is.na(rule_of_law)
+    )
+  )
 )
 
-print(sapply(t_e3, nobs))
+print(sapply(p3_e3_models, nobs))
 
-tex_e3 <- modelsummary(
-  t_e3,
-  stars       = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
-  fmt         = "%.3f",
-  gof_omit    = "AIC|BIC|Log|F|RMSE",
+p3_e3_tex <- modelsummary(
+  p3_e3_models,
+  stars = c("*" = 0.1, "**" = 0.05, "***" = 0.01),
+  fmt = "%.3f",
+  gof_omit = "AIC|BIC|Log|F|RMSE",
   coef_rename = c(
     "fdi_assets_ratio" = "FDI assets / GDP",
     "fdi_liab_ratio"   = "FDI liabilities / GDP",
@@ -3551,163 +3924,153 @@ tex_e3 <- modelsummary(
     "intang_idx"       = "Intangible intensity (std.)",
     "rule_of_law"      = "Rule of Law",
     "opec"             = "OPEC dummy",
-    "hipc"             = "HIPC dummy"),
-  output = "latex_tabular")
+    "hipc"             = "HIPC dummy"
+  ),
+  output = "latex_tabular"
+)
 
-tex_e3_wrapped <- paste0(
+p3_e3_tex_wrapped <- paste0(
   "\\begin{table}[htbp]\n\\centering\n",
   "\\caption{Extension 3 --- Financial Development and Safe Asset Production Capacity (",
   y_ext_start, "--", y_ext_end, ")}\n",
-  "\\label{tab:E3_findev}\n\\scriptsize\n",
-  tex_e3, "\n",
+  "\\label{tab:p3_e3_findev}\n\\scriptsize\n",
+  p3_e3_tex, "\n",
   "\\begin{minipage}{0.95\\linewidth}\n",
   "\\footnotesize Notes: Dependent variable: cumulative dark matter exports over ",
   y_ext_start, "--", y_ext_end, ", divided by end-year GDP. ",
   "The FinDev composite index is the mean of z-standardised log(private credit/GDP) ",
-  "and log(stock market cap/GDP), averaged over the sample window. ",
-  "The theoretical prediction (Caballero, Farhi \\& Gourinchas 2017; ",
-  "He, Krishnamurthy \\& Milbradt 2019) is a positive coefficient: ",
-  "financially deeper economies produce safe assets at lower cost, ",
-  "attracting capital at below-equilibrium rates --- the return differential ",
-  "H\\&S capitalise as dark matter. ",
-  "Column~(5) includes all three extensions jointly. ",
+  "and log(stock market capitalisation/GDP). ",
+  "Column (5) includes financial development, intangible intensity and institutional controls jointly. ",
   "All variables winsorised at the 1\\% level. ",
   "* p$<$0.10, ** p$<$0.05, *** p$<$0.01.\n",
   "\\end{minipage}\n\\end{table}"
 )
 
-compile_table(tex_e3_wrapped, "tableE3_findev",
-              part = "part_III", landscape = FALSE, table_number = 4, fit_width = TRUE)
+compile_table(
+  p3_e3_tex_wrapped,
+  "p3_table_E3_findev",
+  part = "part_III",
+  landscape = FALSE,
+  table_number = 5,
+  fit_width = TRUE
+)
 
-# ── Figure E3 — Two-panel scatter: credit depth and equity market depth ────────
+# ── Figure: credit and equity market depth ────────────────────────────────────
 
-make_scatter_e3 <- function(df, xvar, xlabel) {
+p3_make_findev_scatter <- function(df, xvar, xlabel) {
   df %>%
     filter(!is.na(.data[[xvar]])) %>%
-    mutate(grp = case_when(
-      iso3c %in% safe_havens ~ "Safe haven",
-      iso3c %in% industrial  ~ "Other industrial",
-      TRUE                   ~ "Developing")) %>%
+    mutate(
+      grp = case_when(
+        iso3c %in% safe_havens ~ "Safe haven",
+        iso3c %in% industrial  ~ "Other industrial",
+        TRUE                   ~ "Developing"
+      )
+    ) %>%
     ggplot(aes(x = .data[[xvar]], y = dm_exp_ratio, label = iso3c)) +
     geom_hline(yintercept = 0, colour = col_grey, linewidth = 0.4) +
-    geom_smooth(method = "lm", se = TRUE, colour = col_red,
-                linewidth = 0.9, fill = col_red, alpha = 0.08) +
+    geom_smooth(
+      method = "lm", se = TRUE, colour = col_red,
+      linewidth = 0.9, fill = col_red, alpha = 0.08
+    ) +
     geom_point(aes(colour = grp, size = grp), alpha = 0.82) +
-    geom_text_repel(aes(colour = grp), size = 2.2,
-                    segment.colour = "grey70", segment.size = 0.3,
-                    box.padding = 0.28, max.overlaps = 20, seed = 7) +
+    geom_text_repel(
+      aes(colour = grp), size = 2.2,
+      segment.colour = "grey70", segment.size = 0.3,
+      box.padding = 0.28, max.overlaps = 20, seed = 7
+    ) +
     scale_colour_manual(
-      values = c("Safe haven" = col_blue, "Other industrial" = col_red,
-                 "Developing" = "grey55"), name = NULL) +
+      values = c(
+        "Safe haven" = col_blue,
+        "Other industrial" = col_red,
+        "Developing" = "grey55"
+      ),
+      name = NULL
+    ) +
     scale_size_manual(
       values = c("Safe haven" = 2.8, "Other industrial" = 2.2, "Developing" = 1.6),
-      guide = "none") +
-    labs(x = xlabel, y = "Dark matter exports / GDP") +
-    theme_paper + theme(legend.position = "bottom")
+      guide = "none"
+    ) +
+    labs(
+      x = xlabel,
+      y = "Dark matter exports / GDP"
+    ) +
+    theme_paper +
+    theme(legend.position = "bottom")
 }
 
-fig_e3 <- (make_scatter_e3(d_e3, "z_credit", "Private credit / GDP (z-score)") +
-             make_scatter_e3(d_e3, "z_mktcap", "Stock market cap / GDP (z-score)")) +
+p3_e3_fig <- (
+  p3_make_findev_scatter(
+    p3_e3_data,
+    "z_credit",
+    "Private credit / GDP (z-score)"
+  ) +
+    p3_make_findev_scatter(
+      p3_e3_data,
+      "z_mktcap",
+      "Stock market cap / GDP (z-score)"
+    )
+) +
   plot_annotation(
-    title    = "Extension 3 — Financial Development vs. Dark Matter Exports",
-    subtitle = paste0("Cross-section, ", y_ext_start, "\u2013", y_ext_end,
-                      ". OLS fit with 95% CI. Blue = safe haven; red = other industrial."),
-    theme = theme(plot.title    = element_text(size = 10, face = "bold"),
-                  plot.subtitle = element_text(size = 8, colour = "grey40"))
-  ) + plot_layout(guides = "collect") & theme(legend.position = "bottom")
+    title = "Extension 3 — Financial Development vs. Dark Matter Exports",
+    subtitle = paste0(
+      "Cross-section, ", y_ext_start, "\u2013", y_ext_end,
+      ". OLS fit with 95% CI. Blue = safe haven; red = other industrial."
+    ),
+    theme = theme(
+      plot.title = element_text(size = 10, face = "bold"),
+      plot.subtitle = element_text(size = 8, colour = "grey40")
+    )
+  ) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
 
-save_fig(fig_e3, "E3_financial_development_scatter", part = "part_III", w = 12, h = 6)
+save_fig(
+  p3_e3_fig,
+  "p3_fig_E3_financial_development_scatter",
+  part = "part_III",
+  w = 12,
+  h = 6
+)
 
 message("  Extension 3 done.")
 
 
 # ==============================================================================
 #
-# Extension 4 — NII Decomposition by Asset Class
+# Extension 4 — Descriptive NII Decomposition by Asset Class
 #
-# H&S apply a single discount rate r = 5% to total net investment income.
-# This is a deliberate simplification: they want to use a constant rate so
-# that changes in our dark matter measure reflect changes in actual income
-# flows rather than movements in price-earnings ratios (see their footnote 7).
-#
-# But the choice of r matters for how large dark matter looks, and it matters
-# differently for different countries depending on the composition of their
-# foreign asset and liability positions. A country whose NII comes mostly from
-# FDI (earning ~8%) looks very different under a flat 5% versus a component-
-# specific set of rates. We test the sensitivity of H&S's main result to this
-# assumption by decomposing NII into four asset classes and applying alternative
-# discount rates calibrated on Gourinchas & Rey (2006, NBER).
-#
-# The four sub-series are already in our BOP file — no additional download:
-#   NETCD_T.D_F5_D42S.USD.A  FDI income (net)
-#   NETCD_T.P_F5_D4S.USD.A   Portfolio equity income (net)
-#   NETCD_T.P_F3_D41.USD.A   Portfolio debt income (net)
-#   NETCD_T.O_F_D4P.USD.A    Other investment income (net)
-#
-# Discount rate scenarios:
-#   A: flat r = 5%              (H&S baseline)
-#   B: FDI 8%, equity 6%, debt 3%, other 5%  (Gourinchas & Rey central estimates)
-#   C: FDI 10%, equity 7%, debt 2.5%, other 4%  (wider spread — upper bound)
+# This section is deliberately descriptive, because the full component-specific
+# NFA methodology is already implemented in Part II Section 2 and reused above
+# in Extension 2b.
 #
 # ==============================================================================
 
-message("\n── Extension 4: NII Decomposition by Asset Class ────────────────────────")
+message("\n── Part III / Extension 4: Descriptive NII Decomposition ────────────────")
 
-# ── Extract NII sub-components from the BOP file ──────────────────────────────
-
-yr_e4 <- names(bop_raw_ext)[grepl("^\\d{4}$", names(bop_raw)) &
-                          as.integer(names(bop_raw)) >= 1990 &
-                          as.integer(names(bop_raw)) <= y_ext_end]
-
-codes_e4 <- c(
-  nii_total = "NETCD_T.IN1.USD.A",
-  nii_fdi   = "NETCD_T.D_F5_D42S.USD.A",
-  nii_pe    = "NETCD_T.P_F5_D4S.USD.A",
-  nii_pd    = "NETCD_T.P_F3_D41.USD.A",
-  nii_other = "NETCD_T.O_F_D4P.USD.A"
-)
-
-decomp <- map_dfr(names(codes_e4), function(vn) {
-  bop_raw_ext %>%
-    rename(series_code = SERIES_CODE) %>%
-    mutate(
-      iso3c     = str_extract(series_code, "^[^.]+"),
-      indicator = str_remove(series_code, "^[^.]+\\.")) %>%
-    filter(indicator == codes_e4[[vn]]) %>%
-    select(iso3c, all_of(yr_e4)) %>%
-    pivot_longer(-iso3c, names_to = "year", values_to = "value") %>%
-    mutate(year      = as.integer(year),
-           value     = suppressWarnings(as.numeric(value)),
-           component = vn)
-}) %>%
-  pivot_wider(names_from = component, values_from = value) %>%
-  left_join(EWN_ext %>% select(iso3c, year, gdp_usd), by = c("iso3c","year")) %>%
+p3_e4_decomp <- nfa_decomp %>%
+  filter(year >= 1993, year <= y_ext_end) %>%
   mutate(
-    # Scenario A: H&S flat r = 5% applied to total NII
-    nfa_dm_A = nii_total / 0.05,
-    # Scenario B: component-specific rates from Gourinchas & Rey (2006)
-    nfa_dm_B = (nii_fdi / 0.08) + (nii_pe / 0.06) +
-      (nii_pd  / 0.03) + (nii_other / 0.05),
-    # Scenario C: wider spread — tests sensitivity to extreme assumptions
-    nfa_dm_C = (nii_fdi / 0.10) + (nii_pe / 0.07) +
-      (nii_pd  / 0.025) + (nii_other / 0.04),
-    share_fdi   = nii_fdi   / nii_total * 100,
-    share_pe    = nii_pe    / nii_total * 100,
-    share_pd    = nii_pd    / nii_total * 100,
+    share_fdi = nii_fdi / nii_total * 100,
+    share_equity = nii_equity / nii_total * 100,
+    share_debt = nii_debt / nii_total * 100,
     share_other = nii_other / nii_total * 100
   )
 
-# ── Figure E4a — NII decomposition for six key countries ─────────────────────
-#
-# We show the income breakdown for three safe havens (USA, GBR, CHE) and
-# three countries that appear as dark matter importers in H&S (IRL, ITA, DEU).
-# This reveals whether the US premium is driven by FDI (knowledge channel)
-# or by portfolio debt (safe asset / liquidity channel).
+# ── Figure: NII decomposition for six key countries ───────────────────────────
 
-showcase_e4 <- c("USA","GBR","DEU","JPN","FRA","IRL")
-labels_e4   <- c(USA="United States", GBR="United Kingdom", DEU="Germany",
-                 JPN="Japan",         FRA="France",         IRL="Ireland")
-comp_cols <- c(
+p3_e4_showcase <- c("USA", "GBR", "DEU", "JPN", "FRA", "IRL")
+
+p3_e4_labels <- c(
+  USA = "United States",
+  GBR = "United Kingdom",
+  DEU = "Germany",
+  JPN = "Japan",
+  FRA = "France",
+  IRL = "Ireland"
+)
+
+p3_e4_comp_cols <- c(
   "FDI income"       = col_blue,
   "Portfolio equity" = col_red,
   "Portfolio debt"   = col_green,
@@ -3715,191 +4078,177 @@ comp_cols <- c(
   "Total NII"        = "black"
 )
 
-fig_e4a <- decomp %>%
-  filter(iso3c %in% showcase_e4, !is.na(nii_total)) %>%
-  pivot_longer(c(nii_fdi, nii_pe, nii_pd, nii_other, nii_total),
-               names_to = "component", values_to = "value") %>%
-  mutate(
-    value_bn  = value / 1e6,
-    component = factor(
-      recode(component, nii_fdi = "FDI income", nii_pe = "Portfolio equity",
-             nii_pd = "Portfolio debt", nii_other = "Other investment",
-             nii_total = "Total NII"),
-      levels = c("FDI income","Portfolio equity","Portfolio debt",
-                 "Other investment","Total NII")),
-    country = factor(labels_e4[iso3c], levels = labels_e4)
+p3_e4_fig_decomp <- p3_e4_decomp %>%
+  filter(iso3c %in% p3_e4_showcase, !is.na(nii_total)) %>%
+  pivot_longer(
+    c(nii_fdi, nii_equity, nii_debt, nii_other, nii_total),
+    names_to = "component",
+    values_to = "value"
   ) %>%
-  ggplot(aes(x = year, y = value_bn,
-             colour = component, linetype = component, linewidth = component)) +
+  mutate(
+    value_bn = value / 1e6,
+    component = factor(
+      recode(
+        component,
+        nii_fdi    = "FDI income",
+        nii_equity = "Portfolio equity",
+        nii_debt   = "Portfolio debt",
+        nii_other  = "Other investment",
+        nii_total  = "Total NII"
+      ),
+      levels = c(
+        "FDI income",
+        "Portfolio equity",
+        "Portfolio debt",
+        "Other investment",
+        "Total NII"
+      )
+    ),
+    country = factor(p3_e4_labels[iso3c], levels = p3_e4_labels)
+  ) %>%
+  ggplot(aes(
+    x = year,
+    y = value_bn,
+    colour = component,
+    linetype = component,
+    linewidth = component
+  )) +
   geom_hline(yintercept = 0, colour = "grey70", linewidth = 0.35) +
   geom_line(alpha = 0.9, na.rm = TRUE) +
-  scale_colour_manual(values = comp_cols, name = NULL) +
+  scale_colour_manual(values = p3_e4_comp_cols, name = NULL) +
   scale_linetype_manual(
-    values = c("FDI income" = "solid", "Portfolio equity" = "longdash",
-               "Portfolio debt" = "dashed", "Other investment" = "dotted",
-               "Total NII" = "solid"),
-    name = NULL) +
+    values = c(
+      "FDI income" = "solid",
+      "Portfolio equity" = "longdash",
+      "Portfolio debt" = "dashed",
+      "Other investment" = "dotted",
+      "Total NII" = "solid"
+    ),
+    name = NULL
+  ) +
   scale_linewidth_manual(
-    values = c("FDI income" = 1.3, "Portfolio equity" = 1.1,
-               "Portfolio debt" = 1.1, "Other investment" = 1.0, "Total NII" = 1.8),
-    name = NULL) +
+    values = c(
+      "FDI income" = 1.3,
+      "Portfolio equity" = 1.1,
+      "Portfolio debt" = 1.1,
+      "Other investment" = 1.0,
+      "Total NII" = 1.8
+    ),
+    name = NULL
+  ) +
   facet_wrap(~ country, scales = "free_y", ncol = 3) +
-  scale_x_continuous(breaks = seq(1990, y_ext_end, 8)) +
+  scale_x_continuous(breaks = seq(1993, y_ext_end, 8)) +
   labs(
-    title    = paste0("Extension 4 — NII Decomposition by Asset Class (1990\u2013",
-                      y_ext_end, ")"),
-    subtitle = paste0("Net investment income ($tn) split by asset class. ",
-                      "FDI income dominance for safe havens supports the H&S knowledge channel."),
-    x = NULL, y = "Net investment income (trillions USD)") +
+    title = paste0("Extension 4 — NII Decomposition by Asset Class (1993\u2013", y_ext_end, ")"),
+    subtitle = "Net investment income split by asset class. Total NII shown as thick black line.",
+    x = NULL,
+    y = "Net investment income, USD millions"
+  ) +
   theme_paper +
-  theme(legend.position = "bottom",
-        strip.text      = element_text(face = "bold", size = 9),
-        axis.text.x     = element_text(size = 7.5))
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold")
+  )
 
-save_fig(fig_e4a, "E4a_nii_decomposition_countries", part = "part_III", w = 13, h = 9)
+save_fig(
+  p3_e4_fig_decomp,
+  "p3_fig_E4_nii_decomposition_showcase",
+  part = "part_III",
+  w = 12,
+  h = 7
+)
 
-# ── Figure E4b — Discount rate sensitivity for the US ─────────────────────────
-#
-# If H&S's conclusion about the US holds under Scenarios B and C, the choice
-# of r = 5% is not driving the result. If dark matter collapses under the
-# component-specific rates, the flat discount rate assumption is doing
-# more work than the paper acknowledges.
+# ── Summary table: average NII composition over last 10 years ─────────────────
 
-fig_e4b <- decomp %>%
-  filter(iso3c == "USA", year >= 1990, !is.na(gdp_usd)) %>%
-  mutate(
-    A_gdp = nfa_dm_A / gdp_usd * 100,
-    B_gdp = nfa_dm_B / gdp_usd * 100,
-    C_gdp = nfa_dm_C / gdp_usd * 100
-  ) %>%
-  pivot_longer(c(A_gdp, B_gdp, C_gdp), names_to = "scenario", values_to = "pct") %>%
-  mutate(scenario = recode(scenario,
-                           "A_gdp" = "A: flat r=5% (H&S baseline)",
-                           "B_gdp" = "B: FDI 8%, equity 6%, debt 3%",
-                           "C_gdp" = "C: FDI 10%, equity 7%, debt 2.5%")) %>%
-  filter(!is.na(pct)) %>%
-  ggplot(aes(x = year, y = pct, colour = scenario, linetype = scenario)) +
-  geom_hline(yintercept = 0, colour = col_grey, linewidth = 0.4) +
-  geom_line(linewidth = 1.6, alpha = 0.9) +
-  scale_colour_manual(
-    values = c("A: flat r=5% (H&S baseline)"      = col_blue,
-               "B: FDI 8%, equity 6%, debt 3%"    = col_red,
-               "C: FDI 10%, equity 7%, debt 2.5%" = col_green),
-    name = NULL) +
-  scale_linetype_manual(
-    values = c("A: flat r=5% (H&S baseline)"      = "solid",
-               "B: FDI 8%, equity 6%, debt 3%"    = "dashed",
-               "C: FDI 10%, equity 7%, debt 2.5%" = "dotted"),
-    name = NULL) +
-  scale_x_continuous(breaks = seq(1990, y_ext_end, 4)) +
-  labs(
-    title    = "Extension 4b — US Dark Matter Stock under Alternative Discount Rate Scenarios",
-    subtitle = paste0("% of US GDP. Scenarios calibrated on Gourinchas & Rey (2006). ",
-                      "Persistence across B and C confirms H&S is robust to the choice of r."),
-    x = NULL, y = "NFA dark matter (% of US GDP)") +
-  theme_paper + theme(legend.position = "bottom")
+p3_e4_recent_window <- (y_ext_end - 9):y_ext_end
 
-save_fig(fig_e4b, "E4b_discount_scenarios_usa", part = "part_III", w = 10, h = 5.5)
-
-# ── Table E4 — NII composition summary ────────────────────────────────────────
-#
-# Simple descriptive table showing each country's average annual NII and how it
-# breaks down across asset classes. Countries are sorted by FDI income share
-# to show which economies rely most heavily on the knowledge channel.
-
-comp_summ <- decomp %>%
-  filter(iso3c %in% c(safe_havens, "FRA","ITA","CAN","AUS"),
-         year >= 2000, !is.na(nii_total)) %>%
+p3_e4_summary <- p3_e4_decomp %>%
+  filter(iso3c %in% p3_e4_showcase, year %in% p3_e4_recent_window) %>%
   group_by(iso3c) %>%
   summarise(
-    nii_avg = mean(nii_total / 1e6, na.rm = TRUE),
-    fdi_sh  = mean(share_fdi,       na.rm = TRUE),
-    pe_sh   = mean(share_pe,        na.rm = TRUE),
-    pd_sh   = mean(share_pd,        na.rm = TRUE),
-    oth_sh  = mean(share_other,     na.rm = TRUE),
+    country = p3_e4_labels[iso3c[1]],
+    nii_total_avg = mean_or_na2(nii_total) / 1e6,
+    fdi_share_avg = mean_or_na2(share_fdi),
+    equity_share_avg = mean_or_na2(share_equity),
+    debt_share_avg = mean_or_na2(share_debt),
+    other_share_avg = mean_or_na2(share_other),
+    dm_A_avg = mean_or_na2(dm_A_gdp),
+    dm_B_avg = mean_or_na2(dm_B_gdp),
     .groups = "drop"
   ) %>%
-  arrange(desc(fdi_sh)) %>%
-  mutate(across(where(is.numeric), ~ round(., 1)))
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
 
-comp_tex <- kableExtra::kbl(
-  comp_summ,
-  format    = "latex", booktabs = TRUE, linesep = "",
-  col.names = c("Country", "Avg NII (\\$tn)", "FDI (\\%)",
-                "Port.~equity (\\%)", "Port.~debt (\\%)", "Other (\\%)"),
-  caption   = paste0("Extension 4 --- NII Composition by Asset Class, ",
-                     "Annual Average 2000--", y_ext_end),
-  label     = "tab:E4_nii",
-  escape    = FALSE,
-  align     = c("l","r","r","r","r","r")
+p3_e4_tex <- kableExtra::kbl(
+  p3_e4_summary %>%
+    select(
+      country, nii_total_avg,
+      fdi_share_avg, equity_share_avg, debt_share_avg, other_share_avg,
+      dm_A_avg, dm_B_avg
+    ),
+  format = "latex",
+  booktabs = TRUE,
+  linesep = "",
+  col.names = c(
+    "Country",
+    "Avg. NII (\\$m)",
+    "FDI (\\%)",
+    "Equity (\\%)",
+    "Debt (\\%)",
+    "Other (\\%)",
+    "DM A (\\% GDP)",
+    "DM B (\\% GDP)"
+  ),
+  caption = paste0(
+    "Extension 4 --- NII Composition and Dark Matter, average ",
+    min(p3_e4_recent_window), "--", max(p3_e4_recent_window)
+  ),
+  label = "tab:p3_e4_nii_decomp",
+  escape = FALSE,
+  align = c("l", "r", "r", "r", "r", "r", "r", "r")
 ) %>%
-  kableExtra::kable_styling(
-    latex_options = c("hold_position","striped"),
-    font_size = 10, full_width = FALSE) %>%
-  kableExtra::column_spec(1, bold = TRUE, width = "2.2cm") %>%
-  kableExtra::column_spec(2:6, width = "2.2cm") %>%
+  kableExtra::kable_styling(latex_options = "hold_position", font_size = 9.5) %>%
   kableExtra::add_header_above(
-    c(" " = 2, "Share of total NII (\\\\%)" = 4),
-    escape = FALSE, bold = TRUE, line = TRUE) %>%
+    c(" " = 2, "NII composition" = 4, "Dark matter" = 2),
+    bold = TRUE,
+    line = TRUE,
+    escape = FALSE
+  ) %>%
   kableExtra::footnote(
     general = paste0(
-      "Average annual net investment income and its decomposition by asset class. ",
-      "Countries sorted by FDI income share. ",
-      "A high FDI share is consistent with H\\\\&S's knowledge-dissemination channel. ",
-      "A high portfolio debt share is consistent with the safe asset / liquidity channel ",
-      "(Gourinchas \\\\& Rey 2006)."),
-    general_title = "\\\\textit{Notes:} ",
-    escape = FALSE)
+      "NII is shown in USD millions. Shares are expressed as a percentage of total NII. ",
+      "DM A and DM B are the average dark matter stocks under the Part II Section 2 scenarios. ",
+      "This table is descriptive and complements the component-specific VIX test in Extension 2b."
+    ),
+    general_title = "\\textit{Notes:} ",
+    escape = FALSE
+  )
 
-# Compile manually — kableExtra bypasses compile_table()
-full_e4 <- paste0(
-  "\\documentclass[11pt]{article}\n",
-  "\\usepackage{booktabs,xcolor,colortbl,caption,array,graphicx}\n",
-  "\\usepackage[top=2cm,bottom=2cm,left=2.5cm,right=2.5cm]{geometry}\n",
-  "\\begin{document}\\small\\setcounter{table}{4}\n",
-  comp_tex, "\n\\end{document}")
-
-tex_e4p <- file.path(here("code","output","tables","part_III"),
-                     "tableE4_nii_composition.tex")
-pdf_e4p <- file.path(here("code","output","tables","part_III"),
-                     "tableE4_nii_composition.pdf")
-writeLines(full_e4, tex_e4p)
-if (file.exists(pdf_e4p)) file.remove(pdf_e4p)
-old <- setwd(here("code","output","tables","part_III"))
-tryCatch(tinytex::pdflatex("tableE4_nii_composition.tex"),
-         error = function(e) message("LaTeX error E4: ", e$message))
-setwd(old)
-if (file.exists(pdf_e4p)) message("  Saved → part_III/tableE4_nii_composition.pdf")
+compile_table(
+  as.character(p3_e4_tex),
+  "p3_table_E4_nii_decomposition_summary",
+  part = "part_III",
+  landscape = FALSE,
+  table_number = 6,
+  fit_width = FALSE
+)
 
 message("  Extension 4 done.")
 
-message("\nDone.")
-message("Figures (PDF + PNG) : code/output/figures/part_III/")
-message("Tables  (PDF + TEX) : code/output/tables/part_III/")
+# ==============================================================================
+# Part III output summary
+# ==============================================================================
 
-# ==============================================================================
-#
-# Summary — Part III Extensions
-#
-# DATA FILES IN code/data/  (after first run)
-#
-#   vix_daily.csv        Daily VIX from FRED (VIXCLS), 1990-present.
-#                        Columns: observation_date, VIXCLS.
-#
-#   gpr_web_latest.xlsx  Caldara & Iacoviello (2022) GPR index, monthly 1985-2021.
-#                        We use sheet "GPR", column "GPR" (global index).
-#                        The file also contains "GPR_THREAT", "GPR_ACT" and
-#                        country-specific series in "GPR_COUNTRIES" — not used
-#                        here but available for robustness checks.
-#
-#   wdi_intangibles.csv  Downloaded from WDI on first run, cached locally.
-#                        Contains R&D/GDP, resident patents, high-tech export
-#                        share, and ICT service exports for all countries.
-#
-#   wdi_findev.csv       Downloaded from WDI on first run, cached locally.
-#                        Contains private credit/GDP and stock market cap/GDP.
-#
-# NII sub-components (Extension 4) are extracted directly from the existing
-# BOP file — no additional download required.
-#
-# ==============================================================================
+message("\nPart III complete.")
+message("Figures: code/output/figures/part_III/")
+message("Tables : code/output/tables/part_III/")
+message("Outputs created:")
+message("  p3_fig_E1_intangibles_scatter")
+message("  p3_table_E1_intangibles")
+message("  p3_table_E2a_vix_5pct")
+message("  p3_table_E2b_vix_component_method")
+message("  p3_fig_E2c_vix_vs_gpr_timeseries")
+message("  p3_table_E2c_vix_gpr")
+message("  p3_fig_E3_financial_development_scatter")
+message("  p3_table_E3_findev")
+message("  p3_fig_E4_nii_decomposition_showcase")
+message("  p3_table_E4_nii_decomposition_summary")

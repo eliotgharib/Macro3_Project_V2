@@ -1,0 +1,42 @@
+\documentclass[11pt]{article}
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[margin=1in]{geometry}
+\begin{document}
+\small
+\setcounter{table}{3}
+\begin{table}[htbp]
+\centering
+\caption{Extension 2c --- Financial vs. Geopolitical Risk: VIX vs. GPR Horse Race (1990--2022)}
+\label{tab:p3_e2c_vix_gpr}
+\scriptsize
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lllll}
+& (1) VIX & (2) GPR & (3) VIX + GPR & (4) OPEC excl. \\
+\$\textbackslash{}Delta\textbackslash{}log(\textbackslash{}mathrm\{VIX\})\textbackslash{}times\textbackslash{}mathrm\{Safe\textbackslash{} haven\}\$ & -29.4490** &  & -28.8931** & -28.8586** \\
+& (11.6771) &  & (11.3996) & (11.4113) \\
+\$\textbackslash{}Delta\textbackslash{}log(\textbackslash{}mathrm\{VIX\})\textbackslash{}times\textbackslash{}mathrm\{OPEC\}\$ & 1.1669 &  & -0.2057 &  \\
+& (9.3720) &  & (6.6519) &  \\
+FDI liabilities / GDP & -0.0045 & -0.0046 & -0.0046 & -0.0033 \\
+& (0.0092) & (0.0093) & (0.0092) & (0.0099) \\
+FDI assets / GDP & 0.0033 & 0.0034 & 0.0033 & 0.0020 \\
+& (0.0077) & (0.0078) & (0.0077) & (0.0081) \\
+Country FE & Yes & Yes & Yes & Yes \\
+Year FE & Yes & Yes & Yes & Yes \\
+\$\textbackslash{}Delta\textbackslash{}log(\textbackslash{}mathrm\{GPR\})\textbackslash{}times\textbackslash{}mathrm\{Safe\textbackslash{} haven\}\$ &  & -7.5631* & -5.7908 & -5.6910 \\
+&  & (4.4706) & (4.1928) & (4.1690) \\
+\$\textbackslash{}Delta\textbackslash{}log(\textbackslash{}mathrm\{GPR\})\textbackslash{}times\textbackslash{}mathrm\{OPEC\}\$ &  & 7.3745 & 7.3593 &  \\
+&  & (18.5504) & (18.1250) &  \\
+Num.Obs. & 2347 & 2347 & 2347 & 2176 \\
+R2 & 0.089 & 0.084 & 0.090 & 0.090 \\
+FE: iso3c & X & X & X & X \\
+FE: year & X & X & X & X \\
+\end{tabular}%
+}
+\begin{minipage}{0.95\linewidth}
+\footnotesize Notes: Dependent variable: annual dark matter exports divided by GDP, computed with the H\&S 5\% method. All columns include country and year fixed effects. The aggregate VIX and GPR levels are absorbed by year dummies; only differential safe-haven and OPEC responses are identified. GPR = Caldara \& Iacoviello Geopolitical Risk Index. Standard errors clustered by country. * p$<$0.10, ** p$<$0.05, *** p$<$0.01.
+\end{minipage}
+\end{table}
+\end{document}
