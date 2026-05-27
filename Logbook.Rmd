@@ -1,0 +1,642 @@
+---
+title: "Macro 3 — Research Logbook"
+subtitle: "Replication and Extension of Hausmann & Sturzenegger (2006)"
+author:
+  - "Eliot Gharib"
+  - "Youssef Benzakour"
+  - "Benjamin Frémy"
+date: "May 2026"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: readable
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+# Project overview
+
+This logbook documents the construction of our replication and extension of
+Hausmann and Sturzenegger (2006), *Global Imbalances or Bad Accounting? The
+Missing Dark Matter in the Wealth of Nations*.
+
+The project began as a replication exercise for the original H&S paper and
+progressively evolved into an extension of the framework to the post-2003 global
+financial system. The final version is organised around three blocks:
+
+1. replication of the original H&S results;
+2. extension of the analysis to 2022 and decomposition of net investment income
+   by asset class;
+3. original mechanism tests on intangibles, global risk, geopolitical risk and
+   financial development.
+
+The central idea of the project is to ask whether official current-account and
+net international investment position data understate countries' true
+income-generating external wealth. Following H&S, we infer an income-implied
+external position by capitalising net investment income at a constant rate:
+
+\[
+NFA^{DM}_t = \frac{NII_t}{r}, \qquad r = 0.05.
+\]
+
+Dark matter is then defined as the gap between this income-implied net foreign
+asset position and official NIIP:
+
+\[
+DM_t = NFA^{DM}_t - NIIP^{off}_t.
+\]
+
+The final interpretation is deliberately cautious: dark matter should not be
+read as one single hidden stock of assets. It is better understood as a layered
+residual combining return differentials, safe-asset services, portfolio
+composition, FDI mismeasurement, intangible rents and multinational accounting.
+
+# Part I — Replication of Hausmann & Sturzenegger (2006)
+
+## Objective
+
+The first objective was to reproduce the main empirical results of Hausmann and
+Sturzenegger (2006). The original paper argues that official external accounts
+systematically understate the true external wealth of countries like the United
+States because they fail to capture income-generating assets that do not appear
+in standard statistics.
+
+The motivating puzzle is the United States. Between 1982 and 2005, the US
+accumulated more than five trillion dollars in cumulative current-account
+deficits. Under standard accounting, this should have made the US a large net
+debtor paying substantial net investment income to the rest of the world.
+Instead, US net investment income remained close to zero and often positive.
+
+The first task was therefore to replicate:
+
+- the US cumulative current-account and net investment income puzzle;
+- the income-implied NFA measure;
+- the cross-country offset mechanism;
+- the determinant regressions for dark matter exports.
+
+## Data assembled
+
+We assembled the following datasets for the original replication period
+1975--2005:
+
+| Source | Use |
+|---|---|
+| IMF Balance of Payments | Current account balance and net primary income / net investment income |
+| External Wealth of Nations, Brookings 2024 update | Official net foreign asset positions, FDI assets and liabilities |
+| World Bank WDI | Constant-price GDP for HP filtering, R&D expenditure |
+| World Governance Indicators | Rule of Law, averaged over 1996--2005 |
+| Hard-coded country groups | OPEC and HIPC dummies from the original H&S appendix |
+
+The use of the 2024 EWN update is important. It improves coverage and updates
+historical series, but it also creates differences relative to the original
+2006 data used by H&S.
+
+## Construction of dark matter
+
+For each country and year, we compute:
+
+\[
+NFA^{DM}_t = \frac{NII_t}{0.05}
+\]
+
+and
+
+\[
+CA^{DM}_t = NFA^{DM}_t - NFA^{DM}_{t-1}.
+\]
+
+Dark matter exports are defined as:
+
+\[
+XDM_t = CA^{DM}_t - CA^{off}_t.
+\]
+
+For the United States, we reconstruct the official NFA path by anchoring the
+series at the BEA-reported 1982 value of 329 billion dollars and rolling it
+forward and backward using current-account flows. Capital gains are excluded,
+following the logic of the original paper.
+
+## Output volatility
+
+Output volatility is computed as the standard deviation of the HP-filtered log
+real GDP cycle, with annual smoothing parameter:
+
+\[
+\lambda = 100.
+\]
+
+This variable proxies the insurance channel: stable economies should be able to
+provide insurance services to more volatile economies and earn an implicit
+premium.
+
+## Figures replicated
+
+The first replication stage generated the following figures:
+
+- **Figure 1**: US cumulative current account vs. net investment income,
+  1982--2005.
+- **Figures 3a and 3b**: cumulative official current account vs.
+  dark-matter-implied NFA change, with and without the US outlier.
+- **Figure 5b**: dark matter exports vs. cumulative official current account,
+  both as a share of 2003 GDP.
+- **Figure 6c**: regional NFA positions including dark matter, as a share of
+  world GDP.
+- **Figure 8**: US dark matter stock in trillions of dollars and as a share of
+  GDP, 1982--2005.
+
+The most important visual result is the negative cross-country relationship
+between official current-account balances and dark matter exports. This is the
+core H&S offset mechanism.
+
+## Tables replicated
+
+The first replication stage also generated:
+
+- **Table 1**: official cumulative current account regressed on the
+  dark-matter-implied current account;
+- **Table 2**: dark matter exports regressed on official cumulative current
+  account;
+- **Table 3**: cross-sectional determinants of dark matter exports;
+- **Table 4 / 4b**: panel versions of the determinant regressions.
+
+## Sample restriction issue
+
+A major early issue was sample size. Initial regressions used far more countries
+than the original paper because the EWN 2024 dataset covers many more countries
+than the data available to H&S in 2006. This generated samples such as 170+
+countries, whereas H&S used specific 109-country, 79-country and
+industrial-country samples.
+
+We fixed this by hard-coding the H&S country lists from Appendix A.2:
+
+- 109-country broad sample for Tables 1 and 2;
+- 79-country full-data sample for Table 3;
+- 21-country industrial sample for industrial-country specifications.
+
+After restriction, effective sample sizes were close to the original paper,
+with remaining differences due to missing data in the updated IMF and EWN
+series.
+
+## WDI vs. IFS GDP for output volatility
+
+We compared two sources for GDP in the HP-filtered output volatility measure:
+
+1. World Bank WDI constant-price GDP;
+2. IMF IFS quarterly GDP, aggregated to annual frequency.
+
+Switching to IFS improved some coefficients, especially the Table 3 FDI
+liabilities coefficient in column (i), but it worsened other results,
+especially the panel Table 4 coefficients. It also reduced explanatory power in
+some cross-sectional regressions.
+
+We therefore kept WDI as the main GDP source. The rationale was that WDI gave
+more stable overall results, performed better in the panel specifications and
+was more consistent with the broader data strategy.
+
+## Remaining divergences from H&S
+
+After all fixes, three main divergences remained:
+
+1. Output volatility sometimes had a different sign or weaker behaviour than in
+   the original paper.
+2. The FDI assets coefficient in panel specifications did not perfectly match
+   H&S.
+3. Table 1 coefficients were somewhat attenuated relative to the original paper.
+
+We interpret these as legitimate replication limits rather than coding errors.
+They are plausibly driven by:
+
+- the 2024 revision of EWN external wealth data;
+- different BOP coverage relative to the original paper;
+- revised FDI stocks and valuation methods;
+- country coverage changes;
+- the increased importance of financial centres, special purpose entities and
+  phantom FDI.
+
+# Part II — Extension to 2022 and asset-class decomposition
+
+## Motivation
+
+The second part asks whether the H&S framework survives after the original
+sample period. The original paper ends before several major events:
+
+- the global financial crisis;
+- the euro-area crisis;
+- the rise of China as a major creditor;
+- the COVID period;
+- the expansion of multinational profit shifting and phantom FDI.
+
+This makes the post-2003 extension important. If the offset mechanism only
+holds before 2003, then dark matter may be a period-specific artifact. If it
+survives to 2022, the H&S insight remains empirically relevant.
+
+## Time update to 2022
+
+We extend the original 5% capitalisation method to the 1980--2022 period using
+updated IMF BOP and EWN data.
+
+The most important result is the extended version of the H&S offset regression:
+
+\[
+XDM_i = \alpha + \beta CA_i^{off} + \varepsilon_i.
+\]
+
+The estimated coefficient is approximately:
+
+\[
+\hat{\beta} \simeq -0.94,
+\]
+
+with an \(R^2\) around 0.56. This is slightly stronger than the original-period
+estimate around -0.885.
+
+The interpretation is clear: countries with larger official current-account
+surpluses tend to import dark matter, while countries with official deficits
+tend to export it. The central offset mechanism survives the longer sample.
+
+## Extended US dark matter stock
+
+The US dark matter stock remains economically large after the original H&S
+sample. In dollar terms, it continues to grow after 2005 and remains large
+through the 2010s.
+
+However, as a share of GDP, the US dark matter stock appears to decline after
+the late 2010s. This is important for interpretation: the US advantage remains
+large, but it is not mechanically increasing forever.
+
+## Global NFA including dark matter
+
+The updated global NFA figure shows that the United States still looks much
+stronger under income-implied accounting than under official NIIP statistics.
+Japan also remains creditor-like in income-implied terms.
+
+However, the extended global picture is less stable than the original H&S
+1980--2004 picture. The rest of the world becomes increasingly negative in the
+dark-matter-adjusted decomposition. This suggests that income-implied global
+imbalances may have become more pronounced in the post-2003 period.
+
+## Insurance-channel decomposition: beta vs. idiosyncratic volatility
+
+We explored a further extension of the H&S insurance channel. H&S use output
+volatility as a single variable, but this mixes two forms of risk:
+
+1. systematic exposure to world output fluctuations;
+2. idiosyncratic country-specific volatility.
+
+Theoretically, if dark matter reflects a globally priced insurance service,
+then systematic beta with world output should matter more than purely domestic
+idiosyncratic volatility.
+
+We constructed:
+
+- a rolling ten-year beta of each country's GDP growth with respect to world GDP
+  growth;
+- an idiosyncratic volatility measure based on the residuals of the same rolling
+  regression.
+
+The results were nuanced. The original H&S output volatility result survives in
+the extended cross-section. However, once volatility is decomposed, the evidence
+points more strongly to idiosyncratic volatility than to beta with world output.
+In annual panel regressions, neither beta nor idiosyncratic volatility robustly
+explains dark matter exports.
+
+This weakens a clean global-insurance interpretation and suggests that the
+strongest evidence remains cross-sectional rather than within-country over time.
+
+## Asset-class decomposition
+
+The most important methodological extension is the decomposition of net
+investment income by asset class. The flat 5% capitalisation rate is useful as
+a benchmark, but it treats very different income streams as if they had the
+same risk and liquidity.
+
+We therefore decompose NII into:
+
+\[
+j \in \{FDI, equity, debt, other\}.
+\]
+
+The component-specific implied NFA is:
+
+\[
+NFA^{comp}_t = \sum_j \frac{NII^j_t}{r_j}.
+\]
+
+The goal is not to build a full structural valuation model. It is to test
+whether the H&S result survives when different income streams are treated
+according to their economic nature.
+
+## Scenario A: universal asset-class rates
+
+Scenario A assigns common rates across countries:
+
+- FDI: 8%;
+- portfolio equity: 6%;
+- portfolio debt: 3%;
+- other investment income: 5%.
+
+This keeps global comparability while acknowledging that FDI, equity and debt
+should not be capitalised in the same way.
+
+## Scenario B: country-group-specific rates
+
+Scenario B allows rates to differ across country groups:
+
+- privilege countries, such as the US, UK and Switzerland;
+- other advanced economies;
+- emerging economies.
+
+This scenario captures the idea that some countries can issue safe and liquid
+debt at lower yields, while emerging economies face higher debt premia.
+
+A key methodological clarification emerged during writing: Scenario B must be
+interpreted carefully because it still capitalises **net** income flows. If net
+debt income is negative, a lower debt discount rate makes that component more
+negative, not more positive. This is why Scenario C became central.
+
+## Scenario C: gross-position approach
+
+Scenario C separates gross external assets and liabilities:
+
+\[
+NFA^C_t = \frac{1}{r^{disc}}\sum_j
+\left(A^j_t r^{j,A} - L^j_t r^{j,L}\right).
+\]
+
+This is the most conceptually transparent scenario because it directly measures
+the return wedge between what a country earns on external assets and what it
+pays on external liabilities.
+
+It makes the exorbitant-privilege mechanism explicit:
+
+- the United States earns high returns on outward FDI and equity;
+- it pays low returns on safe and liquid debt liabilities;
+- China holds large low-yielding assets while paying relatively high returns on
+  inward FDI liabilities.
+
+This changes the interpretation of dark matter. It is not just about whether a
+country is a creditor or debtor. It is about the composition and return profile
+of its external balance sheet.
+
+# Part III — Original economic extensions
+
+## General objective
+
+The third part moves beyond replication and asks what dark matter captures in
+the post-2003 global financial system. The objective is not to find one single
+mechanism, but to assess which channels remain informative once the H&S residual
+is brought to modern data.
+
+The extensions test:
+
+- intangible capital;
+- global financial risk;
+- geopolitical risk;
+- financial development;
+- asset-class composition.
+
+## Extension 1 — Safe-asset cycle and VIX
+
+The first mechanism test focuses on the insurance or safe-asset interpretation.
+If safe havens provide insurance to global investors, then the value of this
+service should rise when global risk aversion increases.
+
+We use annual changes in log VIX as a proxy for global financial risk. The
+empirical strategy estimates whether safe-haven economies react differently to
+VIX shocks than other countries.
+
+The main result is not a simple confirmation of the safe-asset premium. The
+safe-haven interaction is negative under the H&S 5% method and weaker under the
+component-specific method. This suggests that safe havens do not necessarily
+record higher annual dark matter exports when the VIX rises.
+
+The interpretation is closer to "exorbitant duty": in crises, safe havens
+provide liquidity and insurance, but the payoff may appear through lower
+funding costs, capital gains or balance-sheet effects rather than immediate
+annual NII.
+
+## Extension 1b — Financial risk vs. geopolitical risk
+
+We then distinguish financial risk from geopolitical risk. The VIX captures
+financial-market stress, while the Caldara-Iacoviello Geopolitical Risk index
+captures geopolitical uncertainty.
+
+The horse-race specification includes both VIX and GPR interactions. The VIX
+safe-haven interaction remains more stable than the GPR interaction. GPR is
+weaker and loses significance once VIX is controlled for.
+
+The conclusion is that dark matter responds more clearly to global financial
+risk than to geopolitical news in annual data.
+
+## Extension 2 — Intangible capital intensity
+
+H&S proxy the knowledge-capital channel with R&D. We broaden this idea using a
+composite intangible index based on:
+
+- R&D expenditure;
+- resident patent applications;
+- high-technology exports;
+- ICT service exports.
+
+The intuition is that modern intangible capital is multidimensional and may be
+poorly captured by R&D alone.
+
+The result is negative but informative. R&D and the broader intangible index do
+not robustly predict dark matter exports. This does not rule out intangible
+rents. Instead, it suggests that aggregate country-level proxies cannot easily
+separate countries producing intangible assets from countries hosting
+multinational profits for tax or accounting reasons.
+
+## Extension 3 — Financial development and safe-asset production
+
+The safe-asset literature suggests that countries with deeper financial markets
+may be better able to produce internationally demanded safe assets. We therefore
+construct a financial development index using:
+
+- private credit to GDP;
+- stock market capitalisation to GDP.
+
+Financial development is not a robust positive predictor of dark matter. The
+composite index is weakly negative in one specification and becomes
+insignificant with broader controls. Output volatility remains more robust.
+
+The interpretation is that safe-asset production is not simply a matter of
+domestic financial depth. Reserve-currency status, legal credibility, market
+liquidity, geopolitical power and network externalities likely matter more.
+
+## Extension 4 — NII composition by asset class
+
+Finally, we look directly at observed net investment income composition. This
+is not a descriptive add-on: it is necessary for interpreting what the dark
+matter residual measures.
+
+The same aggregate NII can come from very different channels:
+
+- FDI rents;
+- portfolio equity returns;
+- debt income;
+- other investment income;
+- multinational profit recording;
+- financial-centre pass-through.
+
+The US--China contrast is especially informative:
+
+- the US has a negative official NIIP but strong income generation because its
+  external assets are tilted toward high-return FDI and equity while its
+  liabilities include safe low-yield debt;
+- China has a positive official NIIP, but weaker income generation because it
+  holds low-yielding external assets and pays relatively high returns on inward
+  FDI liabilities.
+
+This supports the portfolio-composition interpretation of dark matter.
+
+# Literature positioning
+
+## Exorbitant privilege and return differentials
+
+The extension to 2022 connects directly to the exorbitant-privilege literature.
+Gourinchas and Rey show that the United States earns higher returns on external
+assets than it pays on external liabilities. This shifts the interpretation of
+US dark matter from a mysterious hidden stock toward a persistent return
+advantage.
+
+This is consistent with our extended results: the US remains much stronger
+under income-implied accounting, but the advantage is not mechanically
+unlimited.
+
+## Exorbitant duty and safe assets
+
+Gourinchas, Rey and Govillot develop the idea of "exorbitant duty": the US may
+earn a privilege in normal times but also provide insurance to the rest of the
+world during crises.
+
+This supports our VIX extension. However, our results show that crisis periods
+do not necessarily generate higher contemporaneous dark matter exports for safe
+havens. The benefit may appear through funding costs, valuation effects or the
+ability to issue safe liabilities.
+
+## Global financial cycle
+
+The VIX extension also connects with the Global Financial Cycle literature.
+Miranda-Agrippino and Rey show that a global factor explains a significant
+share of international risky asset price variation. This justifies using the
+VIX as a proxy for global financial stress.
+
+## Geopolitical risk
+
+The GPR extension draws on Caldara and Iacoviello's index of geopolitical risk.
+It allows us to distinguish financial stress from broader geopolitical
+instability. Our results suggest that the dark matter mechanism is more closely
+linked to financial-market stress than to geopolitical risk in annual data.
+
+## Intangible capital
+
+The intangible-capital extension is motivated by Corrado, Hulten and Sichel,
+who argue that standard national accounts omit important forms of intangible
+investment, including software, organisational capital and brand equity.
+
+This supports the idea that H&S's R&D proxy is too narrow. However, our broader
+intangible index still does not robustly explain dark matter exports, likely
+because modern multinational accounting and profit shifting blur the geography
+of intangible rents.
+
+## Profit shifting and phantom FDI
+
+The most important post-H&S qualification comes from the literature on tax
+havens, profit shifting and measurement error. Work by Wright and Zucman,
+Tørsløv, Wier and Zucman, Damgaard, Elkjaer and Johannesen, and Coppola et al.
+suggests that cross-border returns and external positions are heavily affected
+by tax-haven subsidiaries, phantom FDI and the residence-based structure of
+international statistics.
+
+This means that some dark matter may reflect productive know-how or insurance
+services, but some may also reflect statistical and accounting conventions.
+
+# Final synthesis
+
+The final project supports the broad H&S insight: official external accounts
+can be misleading because they do not fully capture income-generating external
+positions.
+
+However, the meaning of dark matter changes once the sample is extended and the
+residual is decomposed. It is not one hidden stock of assets. It is a diagnostic
+residual combining:
+
+- return privilege;
+- safe-asset demand;
+- insurance services;
+- FDI mismeasurement;
+- intangible rents;
+- profit shifting;
+- financial-centre pass-through;
+- statistical conventions.
+
+The strongest empirical result remains the offset mechanism: official
+current-account imbalances are systematically offset by dark matter exports.
+The most robust mechanism is the insurance/stability channel, although it is
+clearer in cross-section than in annual panel variation. The asset-class
+decomposition provides the most useful interpretation of why countries with
+similar official net positions can have very different income-generating
+capacity.
+
+# Practical lessons from the project
+
+## Data lessons
+
+- Replications using modern data can differ substantially from original papers
+  because datasets are revised.
+- Sample restriction is crucial. Using all currently available countries can
+  change the exercise completely.
+- FDI data are especially sensitive to revisions, financial centres, special
+  purpose entities and profit shifting.
+- Cross-sectional cumulative results are more stable than annual panel results.
+
+## Methodological lessons
+
+- The flat 5% capitalisation rate is useful for comparability but too coarse for
+  interpretation.
+- Asset-class decomposition is essential for distinguishing FDI rents from
+  safe-asset effects.
+- Gross-position analysis is preferable when studying return privilege.
+- Mechanism tests should be interpreted as suggestive rather than causal.
+
+## Writing lessons
+
+- A replication report needs a clear hierarchy:
+  1. replicate the core result;
+  2. show that the result survives extension;
+  3. reinterpret the residual through modern mechanisms.
+- Too many mechanism tables can obscure the main contribution unless the
+  synthesis is explicit.
+- The conclusion must stress that dark matter does not make global imbalances
+  harmless. It only shows that official NIIP statistics miss relevant
+  income-generation.
+
+# Reproducibility checklist
+
+- [ ] Clone the repository.
+- [ ] Open `Macro3_Project_V2.Rproj` in RStudio.
+- [ ] Install required packages.
+- [ ] Run `code/Dark_Matter_Replication.R`.
+- [ ] Check that output folders are created:
+  - `code/output/figures/part_I/`
+  - `code/output/figures/part_II/`
+  - `code/output/figures/part_III/`
+  - `code/output/tables/part_I/`
+  - `code/output/tables/part_II/`
+  - `code/output/tables/part_III/`
+- [ ] Compile the LaTeX report or slides using the correct `\graphicspath`.
+- [ ] Verify that Git LFS files have been pulled if large data files appear as
+  pointers.
