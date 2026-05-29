@@ -150,7 +150,7 @@ This is an earlier version of the project script. It is kept for traceability, b
 
 Compared with the final script, it has a simpler output structure and focuses more narrowly on the original replication workflow. It should be treated as a legacy or development version.
 
-### `journal_de_bord_macro3.Rmd`
+### `Logbook.Rmd`
 
 Research logbook documenting the evolution of the project. It covers:
 
@@ -525,23 +525,8 @@ Global Imbalances or Bad Accounting? The Missing Dark Matter in the Wealth of Na
 CID Working Paper No. 124, Harvard University.
 ```
 
----
 
-## 14. License
-
-No license file is currently specified in the repository.
-
-If the repository remains without a `LICENSE` file, the default legal position is that reuse is not explicitly granted. If the repository is intended to be reusable, add a license at the root of the repository.
-
-Suggested options:
-
-- **MIT License** for code;
-- **CC BY 4.0** for written material;
-- a short note clarifying that raw data remain subject to the licenses and terms of the original providers.
-
----
-
-## 15. Contributors
+## 14. Contributors
 
 - Eliot Gharib
 - Youssef Benzakour
@@ -549,6 +534,6 @@ Suggested options:
 
 ---
 
-## 16. Acknowledgements
+## 15. Acknowledgements
 
-This project was prepared for the **Advanced Macroeconomics** course in the **M1 APE program at Paris School of Economics**.
+This project was prepared for the **Macroeconomics 3** course in the **M1 APE program at Paris School of Economics**.
